@@ -7,6 +7,10 @@ final class PlayerAudioSessionController: NSObject, CXCallObserverDelegate {
     private var isActive = false
     private var interruptionObserver: NSObjectProtocol?
     var onConfigurationChanged: (() -> Void)?
+    /// Lets the route carry multichannel audio, which Spatial Audio / head tracking on AirPods and
+    /// multichannel output need. Off by default so the mpv path's session is unchanged; the
+    /// AetherEngine path turns it on.
+    var allowsMultichannelContent = false
 
     func activate() {
         if !isActive {
@@ -38,6 +42,10 @@ final class PlayerAudioSessionController: NSObject, CXCallObserverDelegate {
         } catch {
             print("[NowPlaying] Failed to deactivate audio session: \(error)")
         }
+        if allowsMultichannelContent {
+            // The flag is session-wide and sticks; reset it so a later mpv session starts as before.
+            try? AVAudioSession.sharedInstance().setSupportsMultichannelContent(false)
+        }
     }
 
     func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
@@ -57,6 +65,9 @@ final class PlayerAudioSessionController: NSObject, CXCallObserverDelegate {
         do {
             if session.category != .playback || session.mode != .moviePlayback || session.categoryOptions != options {
                 try session.setCategory(.playback, mode: .moviePlayback, options: options)
+            }
+            if allowsMultichannelContent && !session.supportsMultichannelContent {
+                try session.setSupportsMultichannelContent(true)
             }
             try session.setActive(true)
             onConfigurationChanged?()

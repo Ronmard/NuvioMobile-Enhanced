@@ -224,7 +224,13 @@ struct AetherLoadRequest {
 final class AetherPlayerViewController: UIViewController {
 
     private var player: NuvioAetherPlayer?
-    private let audioSession = PlayerAudioSessionController()
+    private let audioSession: PlayerAudioSessionController = {
+        // Movie playback mode (set by the controller) plus multichannel content: what lets AirPods
+        // Spatial Audio / head tracking and multichannel routes engage for AetherEngine's output.
+        let controller = PlayerAudioSessionController()
+        controller.allowsMultichannelContent = true
+        return controller
+    }()
     private var keyboardShortcutsEnabled = true
     private var keyboardShortcutHandler: ((String) -> Void)?
     private var initErrorMessage = ""
