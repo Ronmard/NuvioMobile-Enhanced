@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0A1B2C3D4E5F60718293A4BD /* DownloadsWidgetExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0A1B2C3D4E5F60718293A4B5 /* DownloadsWidgetExtension.appex */; };
 		7397CF462F80FE3A00AC0F84 /* MPVKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* MPVKit */; };
+		AE7E00000000000000000A01 /* AetherEngine in Frameworks */ = {isa = PBXBuildFile; productRef = AE7E00000000000000000A02 /* AetherEngine */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,6 +95,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7397CF462F80FE3A00AC0F84 /* MPVKit in Frameworks */,
+				AE7E00000000000000000A01 /* AetherEngine in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -165,6 +167,7 @@
 			name = iosApp;
 			packageProductDependencies = (
 				A1B2C3D4E5F6A7B8C9D0E1F2 /* MPVKit */,
+				AE7E00000000000000000A02 /* AetherEngine */,
 			);
 			productName = iosApp;
 			productReference = 07921B4E8F8546BEE682C2FE /* Nuvio.app */;
@@ -199,6 +202,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				F1E2D3C4B5A6F7E8D9C0B1A2 /* XCLocalSwiftPackageReference "../MPVKit" */,
+				AE7E00000000000000000A03 /* XCRemoteSwiftPackageReference "AetherEngine" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AD93033A33973C81BB77B73A /* Products */;
@@ -582,11 +586,27 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		AE7E00000000000000000A03 /* XCRemoteSwiftPackageReference "AetherEngine" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/superuser404notfound/AetherEngine";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.5.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		A1B2C3D4E5F6A7B8C9D0E1F2 /* MPVKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = F1E2D3C4B5A6F7E8D9C0B1A2 /* XCLocalSwiftPackageReference "../MPVKit" */;
 			productName = MPVKit;
+		};
+		AE7E00000000000000000A02 /* AetherEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AE7E00000000000000000A03 /* XCRemoteSwiftPackageReference "AetherEngine" */;
+			productName = AetherEngine;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
