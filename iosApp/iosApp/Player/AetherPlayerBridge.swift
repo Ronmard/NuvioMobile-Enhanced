@@ -34,6 +34,9 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
         return ensurePlayerViewController()
     }
 
+    // Engine choice is the router's job; this bridge is always AetherEngine.
+    func setPreferredEngine(engine: String) {}
+
     private func ensurePlayerViewController() -> AetherPlayerViewController {
         if let playerVC { return playerVC }
         let vc = AetherPlayerViewController()
@@ -246,6 +249,63 @@ final class AetherPlayerViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         _ = ensurePlayer()
+    }
+
+    // MARK: - Immersive system UI (mirrors the mpv view controller)
+
+    override var canBecomeFirstResponder: Bool { true }
+    override var prefersHomeIndicatorAutoHidden: Bool { true }
+    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge { [.bottom, .left, .right] }
+    override var prefersStatusBarHidden: Bool { true }
+    override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        publishImmersiveSystemUIVisibility(isVisible: true)
+        refreshImmersiveSystemUI()
+        becomeFirstResponder()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        publishImmersiveSystemUIVisibility(isVisible: false)
+        super.viewWillDisappear(animated)
+    }
+
+    override func didMove(toParent parent: UIViewController?) {
+        super.didMove(toParent: parent)
+        if parent == nil {
+            publishImmersiveSystemUIVisibility(isVisible: false)
+        }
+    }
+
+    private func refreshImmersiveSystemUI() {
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
+        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+        setNeedsStatusBarAppearanceUpdate()
+
+        var currentParent = parent
+        while let controller = currentParent {
+            controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
+            controller.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+            controller.setNeedsStatusBarAppearanceUpdate()
+            if let rootController = controller as? RootComposeViewController {
+                rootController.refreshImmersiveSystemUI()
+            }
+            currentParent = controller.parent
+        }
+    }
+
+    private func publishImmersiveSystemUIVisibility(isVisible: Bool) {
+        if isVisible {
+            SystemUI.shared.playerDidBecomeVisible(self)
+        } else {
+            SystemUI.shared.playerDidBecomeHidden(self)
+        }
+        NotificationCenter.default.post(
+            name: nuvioPlayerImmersiveSystemUIVisibilityDidChange,
+            object: self,
+            userInfo: [nuvioPlayerImmersiveSystemUIVisibleKey: isVisible]
+        )
     }
 
     private func ensurePlayer() -> NuvioAetherPlayer? {

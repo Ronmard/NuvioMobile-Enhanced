@@ -194,6 +194,21 @@ enum class IosAudioOutputMode(
     }
 }
 
+/** Which iOS playback engine the player uses. [bridgeValue] is what the Swift engine router expects. */
+enum class IosPlayerEngine(
+    val bridgeValue: String,
+    val label: String,
+) {
+    Auto("auto", "Auto"),
+    AetherEngine("aether", "AetherEngine"),
+    Mpv("mpv", "MPV");
+
+    companion object {
+        fun fromStoredName(name: String?): IosPlayerEngine =
+            name?.let { runCatching { valueOf(it) }.getOrNull() } ?: Auto
+    }
+}
+
 @Composable
 fun IosVideoOutputPreset.localizedLabel(): String = when (this) {
     IosVideoOutputPreset.NativeEdr -> stringResource(Res.string.player_ios_preset_native_edr_label)

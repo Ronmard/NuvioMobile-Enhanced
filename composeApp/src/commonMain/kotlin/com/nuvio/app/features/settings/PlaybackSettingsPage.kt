@@ -64,6 +64,7 @@ import com.nuvio.app.features.player.AvailableLanguageOptions
 import com.nuvio.app.features.player.ExternalPlayerApp
 import com.nuvio.app.features.player.ExternalPlayerPlatform
 import com.nuvio.app.features.player.IosAudioOutputMode
+import com.nuvio.app.features.player.IosPlayerEngine
 import com.nuvio.app.features.player.IosHardwareDecoderMode
 import com.nuvio.app.features.player.localizedLabel
 import com.nuvio.app.features.player.IosTargetPrimaries
@@ -368,6 +369,7 @@ private fun PlaybackSettingsSection(
     var skipDirectionDialog by remember { mutableStateOf<Boolean?>(null) } // true = forward
     var showToolbarLayoutDialog by remember { mutableStateOf(false) }
     var showIosAudioOutputDialog by remember { mutableStateOf(false) }
+    var showIosPlayerEngineDialog by remember { mutableStateOf(false) }
     var showIosHardwareDecoderDialog by remember { mutableStateOf(false) }
     var showIosTargetPrimariesDialog by remember { mutableStateOf(false) }
     var showIosTargetTransferDialog by remember { mutableStateOf(false) }
@@ -1337,6 +1339,20 @@ private fun PlaybackSettingsSection(
 
         if (isIos) {
             SettingsSection(
+                title = stringResource(Res.string.settings_playback_ios_player_engine_section),
+                isTablet = isTablet,
+            ) {
+                SettingsGroup(isTablet = isTablet) {
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.settings_playback_ios_player_engine),
+                        description = autoPlayPlayerSettings.iosPlayerEngine.label,
+                        isTablet = isTablet,
+                        onClick = { showIosPlayerEngineDialog = true },
+                    )
+                }
+            }
+
+            SettingsSection(
                 title = stringResource(Res.string.settings_playback_ios_audio_output_section),
                 isTablet = isTablet,
             ) {
@@ -1964,6 +1980,27 @@ private fun PlaybackSettingsSection(
                 showIosHardwareDecoderDialog = false
             },
             onDismiss = { showIosHardwareDecoderDialog = false },
+        )
+    }
+
+    if (showIosPlayerEngineDialog) {
+        IosEnumSelectionDialog(
+            title = stringResource(Res.string.settings_playback_ios_player_engine_dialog),
+            options = IosPlayerEngine.entries,
+            selected = autoPlayPlayerSettings.iosPlayerEngine,
+            label = { it.label },
+            description = {
+                when (it) {
+                    IosPlayerEngine.Auto -> stringResource(Res.string.settings_playback_ios_player_engine_auto_desc)
+                    IosPlayerEngine.AetherEngine -> stringResource(Res.string.settings_playback_ios_player_engine_aether_desc)
+                    IosPlayerEngine.Mpv -> stringResource(Res.string.settings_playback_ios_player_engine_mpv_desc)
+                }
+            },
+            onSelect = {
+                PlayerSettingsRepository.setIosPlayerEngine(it)
+                showIosPlayerEngineDialog = false
+            },
+            onDismiss = { showIosPlayerEngineDialog = false },
         )
     }
 

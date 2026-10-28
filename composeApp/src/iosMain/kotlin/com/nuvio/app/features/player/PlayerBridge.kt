@@ -8,6 +8,11 @@ import platform.UIKit.UIViewController
  */
 interface NuvioPlayerBridge {
     fun createPlayerViewController(): UIViewController
+    /**
+     * Engine for the next load: "auto", "aether" or "mpv" ([IosPlayerEngine.bridgeValue]).
+     * Bridges that are not told stay on mpv.
+     */
+    fun setPreferredEngine(engine: String)
     fun loadFile(url: String)
     fun loadFileWithAudio(
         videoUrl: String,

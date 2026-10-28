@@ -2352,6 +2352,12 @@
     <string name="settings_playback_ios_audio_output_auto_desc">Use AudioUnit while AVFoundation output is temporarily disabled.</string>
     <string name="settings_playback_ios_audio_output_avfoundation_desc">Experimental support for Spatial Audio and multichannel output.</string>
     <string name="settings_playback_ios_audio_output_audiounit_desc">Use the legacy AudioUnit output.</string>
+    <string name="settings_playback_ios_player_engine_section">iOS PLAYER ENGINE</string>
+    <string name="settings_playback_ios_player_engine">Player engine</string>
+    <string name="settings_playback_ios_player_engine_dialog">Player engine</string>
+    <string name="settings_playback_ios_player_engine_auto_desc">Try AetherEngine first and switch to MPV automatically if it cannot open the stream.</string>
+    <string name="settings_playback_ios_player_engine_aether_desc">Always use AetherEngine for system Dolby Vision, HDR and Atmos. Streams it cannot play show an error.</string>
+    <string name="settings_playback_ios_player_engine_mpv_desc">Always use MPV, the original player.</string>
     <!-- Debrid Result Management section -->
     <string name="settings_debrid_section_result_management">RESULT MANAGEMENT</string>
     <string name="settings_debrid_max_results">Max results</string>

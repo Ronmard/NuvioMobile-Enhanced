@@ -401,6 +401,9 @@ actual fun PlatformPlayerSurface(
                 "hwdec=${latestPlayerSettings.value.iosHardwareDecoderMode.mpvValue} toneMapping=${latestPlayerSettings.value.iosToneMappingMode.mpvValue}",
         )
         bridge.applyIosVideoOutputSettings(latestPlayerSettings.value)
+        val preferredEngine = latestPlayerSettings.value.iosPlayerEngine
+        InAppLogger.info("Player/iOS", "preferred engine=${preferredEngine.bridgeValue}")
+        bridge.setPreferredEngine(preferredEngine.bridgeValue)
         bridge.loadFileWithAudio(
             videoUrl = sourceUrl,
             audioUrl = sourceAudioUrl,

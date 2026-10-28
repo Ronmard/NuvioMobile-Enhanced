@@ -116,6 +116,7 @@ actual object PlayerSettingsStorage {
     private const val iosTargetTransferKey = "ios_target_transfer"
     private const val iosHardwareDecoderModeKey = "ios_hardware_decoder_mode"
     private const val iosAudioOutputModeKey = "ios_audio_output_mode"
+    private const val iosPlayerEngineKey = "ios_player_engine"
     private const val iosExtendedDynamicRangeEnabledKey = "ios_extended_dynamic_range_enabled"
     private const val iosTargetColorspaceHintEnabledKey = "ios_target_colorspace_hint_enabled"
     private const val iosHdrComputePeakEnabledKey = "ios_hdr_compute_peak_enabled"
@@ -193,6 +194,7 @@ actual object PlayerSettingsStorage {
         iosTargetTransferKey,
         iosHardwareDecoderModeKey,
         iosAudioOutputModeKey,
+        iosPlayerEngineKey,
         iosExtendedDynamicRangeEnabledKey,
         iosTargetColorspaceHintEnabledKey,
         iosHdrComputePeakEnabledKey,
@@ -1603,6 +1605,13 @@ actual object PlayerSettingsStorage {
         preferences?.edit()?.putString(ProfileScopedKey.of(iosAudioOutputModeKey), mode)?.apply()
     }
 
+    actual fun loadIosPlayerEngine(): String? =
+        preferences?.getString(ProfileScopedKey.of(iosPlayerEngineKey), null)
+
+    actual fun saveIosPlayerEngine(engine: String) {
+        preferences?.edit()?.putString(ProfileScopedKey.of(iosPlayerEngineKey), engine)?.apply()
+    }
+
     private fun loadIosBoolean(keyBase: String, defaultValue: Boolean): Boolean? =
         preferences?.let { sharedPreferences ->
             val key = ProfileScopedKey.of(keyBase)
@@ -1756,6 +1765,7 @@ actual object PlayerSettingsStorage {
         loadIosTargetTransfer()?.let { put(iosTargetTransferKey, encodeSyncString(it)) }
         loadIosHardwareDecoderMode()?.let { put(iosHardwareDecoderModeKey, encodeSyncString(it)) }
         loadIosAudioOutputMode()?.let { put(iosAudioOutputModeKey, encodeSyncString(it)) }
+        loadIosPlayerEngine()?.let { put(iosPlayerEngineKey, encodeSyncString(it)) }
         loadIosExtendedDynamicRangeEnabled()?.let { put(iosExtendedDynamicRangeEnabledKey, encodeSyncBoolean(it)) }
         loadIosTargetColorspaceHintEnabled()?.let { put(iosTargetColorspaceHintEnabledKey, encodeSyncBoolean(it)) }
         loadIosHdrComputePeakEnabled()?.let { put(iosHdrComputePeakEnabledKey, encodeSyncBoolean(it)) }
@@ -1846,6 +1856,7 @@ actual object PlayerSettingsStorage {
         payload.decodeSyncString(iosTargetTransferKey)?.let(::saveIosTargetTransfer)
         payload.decodeSyncString(iosHardwareDecoderModeKey)?.let(::saveIosHardwareDecoderMode)
         payload.decodeSyncString(iosAudioOutputModeKey)?.let(::saveIosAudioOutputMode)
+        payload.decodeSyncString(iosPlayerEngineKey)?.let(::saveIosPlayerEngine)
         payload.decodeSyncBoolean(iosExtendedDynamicRangeEnabledKey)?.let(::saveIosExtendedDynamicRangeEnabled)
         payload.decodeSyncBoolean(iosTargetColorspaceHintEnabledKey)?.let(::saveIosTargetColorspaceHintEnabled)
         payload.decodeSyncBoolean(iosHdrComputePeakEnabledKey)?.let(::saveIosHdrComputePeakEnabled)

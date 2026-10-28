@@ -113,6 +113,7 @@ data class PlayerSettingsUiState(
     val iosTargetTransfer: IosTargetTransfer = IosTargetTransfer.Auto,
     val iosHardwareDecoderMode: IosHardwareDecoderMode = IosHardwareDecoderMode.VideoToolbox,
     val iosAudioOutputMode: IosAudioOutputMode = IosAudioOutputMode.Auto,
+    val iosPlayerEngine: IosPlayerEngine = IosPlayerEngine.Auto,
     val iosExtendedDynamicRangeEnabled: Boolean = true,
     val iosTargetColorspaceHintEnabled: Boolean = true,
     val iosHdrComputePeakEnabled: Boolean = true,
@@ -209,6 +210,7 @@ object PlayerSettingsRepository {
     private var iosTargetTransfer = IosTargetTransfer.Auto
     private var iosHardwareDecoderMode = IosHardwareDecoderMode.VideoToolbox
     private var iosAudioOutputMode = IosAudioOutputMode.Auto
+    private var iosPlayerEngine = IosPlayerEngine.Auto
     private var iosExtendedDynamicRangeEnabled = true
     private var iosTargetColorspaceHintEnabled = true
     private var iosHdrComputePeakEnabled = true
@@ -310,6 +312,7 @@ object PlayerSettingsRepository {
         iosTargetTransfer = IosTargetTransfer.Auto
         iosHardwareDecoderMode = IosHardwareDecoderMode.VideoToolbox
         iosAudioOutputMode = IosAudioOutputMode.Auto
+        iosPlayerEngine = IosPlayerEngine.Auto
         iosExtendedDynamicRangeEnabled = true
         iosTargetColorspaceHintEnabled = true
         iosHdrComputePeakEnabled = true
@@ -484,6 +487,7 @@ object PlayerSettingsRepository {
             ?.let { runCatching { IosHardwareDecoderMode.valueOf(it) }.getOrNull() }
             ?: IosHardwareDecoderMode.VideoToolbox
         iosAudioOutputMode = IosAudioOutputMode.fromStoredName(PlayerSettingsStorage.loadIosAudioOutputMode())
+        iosPlayerEngine = IosPlayerEngine.fromStoredName(PlayerSettingsStorage.loadIosPlayerEngine())
         iosExtendedDynamicRangeEnabled = PlayerSettingsStorage.loadIosExtendedDynamicRangeEnabled() ?: true
         iosTargetColorspaceHintEnabled = PlayerSettingsStorage.loadIosTargetColorspaceHintEnabled() ?: true
         iosHdrComputePeakEnabled = PlayerSettingsStorage.loadIosHdrComputePeakEnabled() ?: true
@@ -1196,6 +1200,13 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveIosAudioOutputMode(iosAudioOutputMode.name)
     }
 
+    fun setIosPlayerEngine(engine: IosPlayerEngine) {
+        ensureLoaded()
+        iosPlayerEngine = engine
+        publish()
+        PlayerSettingsStorage.saveIosPlayerEngine(engine.name)
+    }
+
     fun setIosExtendedDynamicRangeEnabled(enabled: Boolean) {
         ensureLoaded()
         iosVideoOutputPreset = IosVideoOutputPreset.Custom
@@ -1371,6 +1382,7 @@ object PlayerSettingsRepository {
             iosTargetTransfer = iosTargetTransfer,
             iosHardwareDecoderMode = iosHardwareDecoderMode,
             iosAudioOutputMode = iosAudioOutputMode,
+            iosPlayerEngine = iosPlayerEngine,
             iosExtendedDynamicRangeEnabled = iosExtendedDynamicRangeEnabled,
             iosTargetColorspaceHintEnabled = iosTargetColorspaceHintEnabled,
             iosHdrComputePeakEnabled = iosHdrComputePeakEnabled,
