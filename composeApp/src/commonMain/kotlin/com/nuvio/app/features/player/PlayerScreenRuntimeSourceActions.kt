@@ -512,6 +512,10 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     }
     externalSubtitles = stream.externalSubtitles
     activeSourceUrl = url
+    // The playback key (and with it a new player surface) changes with activeSourceUrl right away,
+    // while the quality effect only updates activePlaybackSourceUrl after composition; without this
+    // the new surface's first load was the previous episode's URL. Same rule as that effect.
+    activePlaybackSourceUrl = if (activeTorrentInfoHash == null && url.contains(".m3u8", ignoreCase = true)) null else url
     activeSourceAudioUrl = null
     activeSourceHeaders = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request)
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
