@@ -91,6 +91,7 @@ public final class NuvioAetherPlayer {
     // MARK: - Observation
 
     private func observeEngine() {
+        if NuvioAetherDebug.pgsLogging { observeEngineForDebugLogging() }
         engine.$state
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
@@ -172,6 +173,7 @@ public final class NuvioAetherPlayer {
             .sink { [weak self] cues in
                 guard let self else { return }
                 let mapped = cues.compactMap(NuvioAetherSubtitleCue.make(from:))
+                self.logBitmapCues(engineCues: cues, mapped: mapped)
                 guard mapped != self.subtitleCues else { return }
                 self.subtitleCues = mapped
                 self.onSubtitleCuesChanged?(mapped)
@@ -196,6 +198,47 @@ public final class NuvioAetherPlayer {
                 self.onSubtitleASSSourceChanged?(source)
             }
             .store(in: &cancellables)
+    }
+
+    /// `NuvioAetherDebug.pgsLogging` only: the route and track selection behind the cue lines below.
+    private func observeEngineForDebugLogging() {
+        NuvioAetherDebug.installEngineLogForwarding()
+        engine.$videoRoute
+            .receive(on: DispatchQueue.main)
+            .sink { route in NuvioAetherDebug.log("videoRoute=\(route.rawValue)") }
+            .store(in: &cancellables)
+        engine.$activeSubtitleTrackIndex
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] id in
+                guard let self else { return }
+                let track = id.flatMap { id in self.engine.subtitleTracks.first { $0.id == id } }
+                NuvioAetherDebug.log("activeSubtitle id=\(id.map(String.init) ?? "nil") codec=\(track?.codec ?? "-") "
+                    + "name=\(track?.name ?? "-") external=\(track?.isExternal ?? false) route=\(self.engine.videoRoute.rawValue)")
+            }
+            .store(in: &cancellables)
+    }
+
+    private func logBitmapCues(engineCues: [SubtitleCue], mapped: [NuvioAetherSubtitleCue]) {
+        guard NuvioAetherDebug.pgsLogging else { return }
+        let images: [(cue: SubtitleCue, image: SubtitleImage)] = engineCues.compactMap { cue in
+            if case .image(let image) = cue.body { return (cue, image) }
+            return nil
+        }
+        let clock = engine.clock.sourceTime
+        let mappedBitmaps = mapped.filter { $0.bitmap != nil }.count
+        NuvioAetherDebug.log("cues total=\(engineCues.count) image=\(images.count) mappedBitmap=\(mappedBitmaps) "
+            + "clock=\(String(format: "%.3f", clock)) route=\(engine.videoRoute.rawValue)")
+        // The cues around the playhead: what should be on screen now and next.
+        let nearby = images
+            .filter { $0.cue.endTime > clock - 2 }
+            .sorted { $0.cue.startTime < $1.cue.startTime }
+            .prefix(3)
+        for (cue, image) in nearby {
+            NuvioAetherDebug.log("  cue id=\(cue.id) start=\(String(format: "%.3f", cue.startTime)) "
+                + "end=\(String(format: "%.3f", cue.endTime)) active=\(cue.startTime <= clock && clock < cue.endTime) "
+                + "canvas=\(Int(image.canvasSize.width))x\(Int(image.canvasSize.height)) "
+                + "img=\(image.cgImage.width)x\(image.cgImage.height) pos=\(image.position) forced=\(image.isForced)")
+        }
     }
 
     // MARK: - Loading

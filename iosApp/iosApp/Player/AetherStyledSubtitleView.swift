@@ -46,6 +46,9 @@ final class AetherStyledSubtitleView: UIView {
     private var bitmapLayers: [Int: CALayer] = [:]
     private var shownBitmapLayout: BitmapLayout?
 
+    private var lastBitmapDebugState = ""
+    private var lastBitmapHeartbeat: CFTimeInterval = 0
+
     private struct BitmapLayout: Equatable {
         let cueIds: [Int]
         let videoRect: CGRect
@@ -132,6 +135,8 @@ final class AetherStyledSubtitleView: UIView {
                 bitmapCues = bitmaps
                 shownBitmapLayout = nil
                 updateDisplayLink()
+                NuvioAetherDebug.log("view cues total=\(cues.count) bitmap=\(bitmaps.count) "
+                    + "displayLink=\(displayLink != nil) window=\(window != nil) bounds=\(bounds)")
                 updateBitmaps()
             }
             guard isRenderingASS, let renderer else { return }
@@ -196,12 +201,15 @@ final class AetherStyledSubtitleView: UIView {
     private func updateBitmaps() {
         guard !bitmapCues.isEmpty || !bitmapLayers.isEmpty else { return }
         guard let geometry = videoGeometry?(), let clock = clock?(), bounds.width > 0, bounds.height > 0 else {
+            logBitmapState("blocked geometry=\(videoGeometry?() != nil) clock=\(clock?() != nil) bounds=\(bounds)")
             removeBitmapLayers(keeping: [])
             return
         }
         let rect = Self.videoRect(displaySize: geometry.displaySize, in: bounds, resizeMode: resizeMode, zoom: videoZoom)
         let time = clockInterpolator.time(for: clock) - delaySeconds
         let active = bitmapCues.filter { $0.startSeconds <= time && time < $0.endSeconds }
+        logBitmapState("running display=\(geometry.displaySize) coded=\(geometry.codedSize) videoRect=\(rect)")
+        logBitmapHeartbeat(time: time, clock: clock, active: active)
         let layout = BitmapLayout(cueIds: active.map(\.id), videoRect: rect)
         guard layout != shownBitmapLayout else { return }
         shownBitmapLayout = layout
@@ -227,6 +235,43 @@ final class AetherStyledSubtitleView: UIView {
             layer.addSublayer(bitmapLayer)
         }
         CATransaction.commit()
+        logBitmapLayers(time: time, active: active)
+    }
+
+    // MARK: - Diagnostics (`NuvioAetherDebug.pgsLogging`)
+
+    private func logBitmapState(_ state: @autoclosure () -> String) {
+        guard NuvioAetherDebug.pgsLogging else { return }
+        let state = state()
+        guard state != lastBitmapDebugState else { return }
+        lastBitmapDebugState = state
+        NuvioAetherDebug.log("view \(state)")
+    }
+
+    private func logBitmapHeartbeat(time: Double, clock: AetherSubtitleOverlayView.Clock, active: [NuvioAetherSubtitleCue]) {
+        guard NuvioAetherDebug.pgsLogging else { return }
+        let now = CACurrentMediaTime()
+        guard now - lastBitmapHeartbeat >= 2 else { return }
+        lastBitmapHeartbeat = now
+        let next = bitmapCues.first { $0.endSeconds > time }
+        NuvioAetherDebug.log("view tick time=\(String(format: "%.3f", time)) clock=\(String(format: "%.3f", clock.seconds)) "
+            + "running=\(clock.isRunning) delay=\(delaySeconds) bitmaps=\(bitmapCues.count) active=\(active.map(\.id)) "
+            + "next=\(next.map { "\($0.id)@\(String(format: "%.3f", $0.startSeconds))-\(String(format: "%.3f", $0.endSeconds))" } ?? "none") "
+            + "layers=\(bitmapLayers.count)")
+    }
+
+    private func logBitmapLayers(time: Double, active: [NuvioAetherSubtitleCue]) {
+        guard NuvioAetherDebug.pgsLogging else { return }
+        let siblings = superview?.subviews ?? []
+        NuvioAetherDebug.log("view layout time=\(String(format: "%.3f", time)) active=\(active.map(\.id)) "
+            + "viewFrame=\(frame) hidden=\(isHidden) alpha=\(alpha) window=\(window != nil) "
+            + "zIndex=\(siblings.firstIndex(of: self) ?? -1)/\(siblings.count) sublayers=\(layer.sublayers?.count ?? 0)")
+        for cue in active {
+            guard let bitmapLayer = bitmapLayers[cue.id] else { continue }
+            NuvioAetherDebug.log("  layer cue=\(cue.id) frame=\(bitmapLayer.frame) attached=\(bitmapLayer.superlayer === layer) "
+                + "hidden=\(bitmapLayer.isHidden) opacity=\(bitmapLayer.opacity) scale=\(bitmapLayer.contentsScale) "
+                + "contents=\(bitmapLayer.contents != nil) img=\(cue.bitmap.map { "\($0.image.width)x\($0.image.height)" } ?? "-")")
+        }
     }
 
     private func removeBitmapLayers(keeping ids: Set<Int>) {
