@@ -272,6 +272,20 @@ internal fun PlayerScreenRuntime.restorePreparedNextEpisode(prepared: PreparedNe
     }
 }
 
+/**
+ * A run that started before the prepare had a result searched on its own. When the prepare then
+ * picked the same stream (both search the same results), its pre-buffered engine is handed to the
+ * switch instead of being discarded with the episode change.
+ */
+internal fun PlayerScreenRuntime.takePreparedFinishedDuringRun(stream: StreamItem, nextVideoId: String): PreparedNextEpisode? {
+    val prepared = nextEpisodePrepare.prepared ?: return null
+    if (prepared.videoId != nextVideoId || prepared.stream.playableDirectUrl != stream.playableDirectUrl) return null
+    NextEpisodeDiagnostics.log { "using the preparation that finished during this run (prebuffered=${prepared.prebuffered})" }
+    nextEpisodePrepare.prepared = null
+    nextEpisodePrepare.job = null
+    return prepared
+}
+
 /** Closes a pre-buffered stream that the transition did not use. */
 internal fun PlayerScreenRuntime.releasePreparedNextEpisode(prepared: PreparedNextEpisode) {
     if (!prepared.prebuffered) return

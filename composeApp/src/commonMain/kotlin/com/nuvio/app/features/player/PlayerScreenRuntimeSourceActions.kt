@@ -638,8 +638,9 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
         },
         onEpisodeStreamSelected = { stream, episode ->
             if (isCurrentRequest()) {
-                val seamless = prepared?.prebuffered == true &&
-                    stream.playableDirectUrl == prepared.stream.playableDirectUrl
+                val handoff = prepared ?: takePreparedFinishedDuringRun(stream, episode.id)
+                val seamless = handoff?.prebuffered == true &&
+                    stream.playableDirectUrl == handoff.stream.playableDirectUrl
                 if (seamless) NextEpisodeDiagnostics.log { "switching to the pre-buffered engine" }
                 switchToEpisodeStream(stream, episode)
                 // After the switch: its reset of the previous episode's state must not clear it.
