@@ -101,7 +101,8 @@ data class PlayerSettingsUiState(
     val nextEpisodeThresholdPercent: Float = 99f,
     val nextEpisodeThresholdMinutesBeforeEnd: Float = 2f,
     val preloadNextEpisodeSources: Boolean = false,
-    val nextEpisodeCountdownEnabled: Boolean = false,
+    /** Seconds the next-episode countdown runs before the outro (or the end); 0 is off. */
+    val nextEpisodeCountdownSeconds: Int = 0,
     val prebufferNextEpisodeEnabled: Boolean = true,
     val prepareNextEpisodePercent: Float = 70f,
     val prepareNextEpisodeEnabled: Boolean = true,
@@ -128,6 +129,9 @@ data class PlayerSettingsUiState(
     val iosSaturation: Int = 0,
     val iosGamma: Int = 0,
 )
+
+/** The next-episode countdown lengths offered in settings, in seconds; 0 is off. */
+val NEXT_EPISODE_COUNTDOWN_CHOICES = listOf(0, 3, 5, 10, 15)
 
 object PlayerSettingsRepository {
     private val _uiState = MutableStateFlow(PlayerSettingsUiState())
@@ -202,7 +206,7 @@ object PlayerSettingsRepository {
     private var nextEpisodeThresholdPercent = 99f
     private var nextEpisodeThresholdMinutesBeforeEnd = 2f
     private var preloadNextEpisodeSources = false
-    private var nextEpisodeCountdownEnabled = false
+    private var nextEpisodeCountdownSeconds = 0
     private var prebufferNextEpisodeEnabled = true
     private var prepareNextEpisodePercent = 70f
     private var prepareNextEpisodeEnabled = true
@@ -308,7 +312,7 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = 99f
         nextEpisodeThresholdMinutesBeforeEnd = 2f
         preloadNextEpisodeSources = false
-        nextEpisodeCountdownEnabled = false
+        nextEpisodeCountdownSeconds = 0
         prebufferNextEpisodeEnabled = true
         prepareNextEpisodePercent = 70f
         prepareNextEpisodeEnabled = true
@@ -477,7 +481,8 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = PlayerSettingsStorage.loadNextEpisodeThresholdPercent() ?: 99f
         nextEpisodeThresholdMinutesBeforeEnd = PlayerSettingsStorage.loadNextEpisodeThresholdMinutesBeforeEnd() ?: 2f
         preloadNextEpisodeSources = PlayerSettingsStorage.loadPreloadNextEpisodeSources() ?: false
-        nextEpisodeCountdownEnabled = PlayerSettingsStorage.loadNextEpisodeCountdownEnabled() ?: false
+        nextEpisodeCountdownSeconds = PlayerSettingsStorage.loadNextEpisodeCountdownSeconds()
+            ?.takeIf { it in NEXT_EPISODE_COUNTDOWN_CHOICES } ?: 0
         prebufferNextEpisodeEnabled = PlayerSettingsStorage.loadPrebufferNextEpisodeEnabled() ?: true
         prepareNextEpisodePercent = PlayerSettingsStorage.loadPrepareNextEpisodePercent() ?: 70f
         prepareNextEpisodeEnabled = PlayerSettingsStorage.loadPrepareNextEpisodeEnabled() ?: true
@@ -1096,12 +1101,12 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.savePreloadNextEpisodeSources(enabled)
     }
 
-    fun setNextEpisodeCountdownEnabled(value: Boolean) {
+    fun setNextEpisodeCountdownSeconds(value: Int) {
         ensureLoaded()
-        if (nextEpisodeCountdownEnabled == value) return
-        nextEpisodeCountdownEnabled = value
+        if (value !in NEXT_EPISODE_COUNTDOWN_CHOICES || nextEpisodeCountdownSeconds == value) return
+        nextEpisodeCountdownSeconds = value
         publish()
-        PlayerSettingsStorage.saveNextEpisodeCountdownEnabled(value)
+        PlayerSettingsStorage.saveNextEpisodeCountdownSeconds(value)
     }
 
     fun setPrebufferNextEpisodeEnabled(value: Boolean) {
@@ -1418,7 +1423,7 @@ object PlayerSettingsRepository {
             nextEpisodeThresholdPercent = nextEpisodeThresholdPercent,
             nextEpisodeThresholdMinutesBeforeEnd = nextEpisodeThresholdMinutesBeforeEnd,
             preloadNextEpisodeSources = preloadNextEpisodeSources,
-            nextEpisodeCountdownEnabled = nextEpisodeCountdownEnabled,
+            nextEpisodeCountdownSeconds = nextEpisodeCountdownSeconds,
             prebufferNextEpisodeEnabled = prebufferNextEpisodeEnabled,
             prepareNextEpisodePercent = prepareNextEpisodePercent,
             prepareNextEpisodeEnabled = prepareNextEpisodeEnabled,

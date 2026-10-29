@@ -58,6 +58,8 @@ internal fun BoxScope.PlayerPlaybackOverlays(
     nextEpisodeAutoPlaySearching: Boolean,
     nextEpisodeAutoPlaySourceName: String?,
     nextEpisodeAutoPlayCountdown: Int?,
+    /** Set while the lead countdown runs: the share of it still left, for the card's ring. */
+    nextEpisodeAutoPlayCountdownFraction: Float? = null,
     blurUnwatchedEpisodes: Boolean,
     onPlayNextEpisode: () -> Unit,
     onDismissNextEpisode: () -> Unit,
@@ -143,6 +145,7 @@ internal fun BoxScope.PlayerPlaybackOverlays(
             isAutoPlaySearching = nextEpisodeAutoPlaySearching,
             autoPlaySourceName = nextEpisodeAutoPlaySourceName,
             autoPlayCountdownSec = nextEpisodeAutoPlayCountdown,
+            autoPlayCountdownFraction = nextEpisodeAutoPlayCountdownFraction,
             blurred = blurUnwatchedEpisodes && nextEpisodeInfo?.isWatched == false,
             onPlayNext = onPlayNextEpisode,
             onDismiss = onDismissNextEpisode,

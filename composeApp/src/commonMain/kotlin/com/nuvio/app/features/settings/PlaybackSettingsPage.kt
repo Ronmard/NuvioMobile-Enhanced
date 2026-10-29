@@ -1612,13 +1612,23 @@ private fun PlaybackSettingsSection(
                         onCheckedChange = PlayerSettingsRepository::setPrebufferNextEpisodeEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
+                    var showCountdownDialog by remember { mutableStateOf(false) }
+                    SettingsNavigationRow(
                         title = stringResource(Res.string.settings_playback_next_episode_countdown),
-                        description = stringResource(Res.string.settings_playback_next_episode_countdown_description),
-                        checked = autoPlayPlayerSettings.nextEpisodeCountdownEnabled,
+                        description = nextEpisodeCountdownLabel(autoPlayPlayerSettings.nextEpisodeCountdownSeconds),
                         isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setNextEpisodeCountdownEnabled,
+                        onClick = { showCountdownDialog = true },
                     )
+                    if (showCountdownDialog) {
+                        NextEpisodeCountdownDialog(
+                            selected = autoPlayPlayerSettings.nextEpisodeCountdownSeconds,
+                            onSelect = {
+                                PlayerSettingsRepository.setNextEpisodeCountdownSeconds(it)
+                                showCountdownDialog = false
+                            },
+                            onDismiss = { showCountdownDialog = false },
+                        )
+                    }
                     SettingsGroupDivider(isTablet = isTablet)
                 }
                 var showThresholdModeDialog by remember { mutableStateOf(false) }
@@ -3261,6 +3271,48 @@ private fun IntroDbApiKeyDialog(
         }
     }
 }
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun NextEpisodeCountdownDialog(
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    DialogSurface(
+        onDismissRequest = onDismiss,
+        title = stringResource(Res.string.settings_playback_next_episode_countdown),
+    ) {
+        Text(
+            text = stringResource(Res.string.settings_playback_next_episode_countdown_description),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        com.nuvio.app.features.player.NEXT_EPISODE_COUNTDOWN_CHOICES.forEach { seconds ->
+            DialogOption(
+                text = nextEpisodeCountdownLabel(seconds),
+                selected = seconds == selected,
+                onClick = { onSelect(seconds) },
+            )
+        }
+
+        DialogButtons {
+            DialogButton(
+                text = stringResource(Res.string.action_done),
+                onClick = onDismiss,
+            )
+        }
+    }
+}
+
+@Composable
+private fun nextEpisodeCountdownLabel(seconds: Int): String =
+    if (seconds <= 0) {
+        stringResource(Res.string.settings_playback_next_episode_countdown_off)
+    } else {
+        stringResource(Res.string.settings_playback_next_episode_countdown_seconds, seconds)
+    }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)

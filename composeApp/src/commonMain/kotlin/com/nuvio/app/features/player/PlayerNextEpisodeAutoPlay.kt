@@ -153,12 +153,12 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 is NextEpisodeSearchResult.Selected -> {
                     val selected = result.stream
                     onSourceNameChanged((selected.name?.takeIf { it.isNotBlank() } ?: selected.addonName).trim())
-                    // A prepared episode switches at once unless the countdown setting asks for it;
-                    // without one, today's countdown always runs. Read per transition, so a change
-                    // applies to the next one.
-                    val skipCountdown = preparedStream != null && !settings.nextEpisodeCountdownEnabled
+                    // A prepared episode switches at once: its countdown (if one is picked) already ran on
+                    // the card up to this point (NextEpisodeLeadCountdown). Without one, today's countdown
+                    // runs here.
+                    val skipCountdown = preparedStream != null
                     if (skipCountdown) {
-                        NextEpisodeDiagnostics.log { "countdown skipped: prepared episode ready" }
+                        NextEpisodeDiagnostics.log { "switching at once: prepared episode ready" }
                     } else {
                         for (i in NEXT_EPISODE_COUNTDOWN_SECONDS downTo 1) {
                             onCountdownChanged(i)

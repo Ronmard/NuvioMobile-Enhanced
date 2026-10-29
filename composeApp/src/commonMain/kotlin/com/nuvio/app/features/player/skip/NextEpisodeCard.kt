@@ -82,6 +82,8 @@ fun NextEpisodeCard(
     isAutoPlaySearching: Boolean,
     autoPlaySourceName: String?,
     autoPlayCountdownSec: Int?,
+    /** Set for the lead countdown before a prepared episode: the share of it still left. */
+    autoPlayCountdownFraction: Float? = null,
     blurred: Boolean,
     onPlayNext: () -> Unit,
     onDismiss: () -> Unit,
@@ -110,10 +112,15 @@ fun NextEpisodeCard(
     // The countdown and the card's visibility drop in the same frame at the switch; the ring keeps its
     // last value while the card animates out instead of the Play badge flashing in.
     var exitCountdownSec by remember(nextEpisode.videoId) { mutableStateOf<Int?>(null) }
-    LaunchedEffect(autoPlayCountdownSec, visible) {
-        if (visible) exitCountdownSec = autoPlayCountdownSec
+    var exitCountdownFraction by remember(nextEpisode.videoId) { mutableStateOf<Float?>(null) }
+    LaunchedEffect(autoPlayCountdownSec, autoPlayCountdownFraction, visible) {
+        if (visible) {
+            exitCountdownSec = autoPlayCountdownSec
+            exitCountdownFraction = autoPlayCountdownFraction
+        }
     }
     val ringCountdownSec = if (visible) autoPlayCountdownSec else exitCountdownSec
+    val ringCountdownFraction = if (visible) autoPlayCountdownFraction else exitCountdownFraction
 
     AnimatedVisibility(
         visible = visible,
@@ -251,6 +258,7 @@ fun NextEpisodeCard(
             if (ringCountdownSec != null) {
                 NextEpisodeCountdownRing(
                     countdownSec = ringCountdownSec,
+                    remainingFraction = ringCountdownFraction,
                     resetKey = nextEpisode.videoId,
                     modifier = Modifier.padding(start = 4.dp),
                 )
@@ -287,27 +295,51 @@ fun NextEpisodeCard(
 }
 
 /**
- * The 3-2-1 as a ring that empties clockwise, with the remaining seconds in the middle. It follows
- * the existing countdown state rather than keeping time itself: each value (3, 2, 1) animates the
- * ring linearly from that value's fraction to the next one over the second the launcher waits on it,
- * so the sweep is continuous. A value that does not continue the previous one (a restart, a new
- * episode via [resetKey]) snaps the ring to where that value starts.
+ * The countdown as a ring that empties clockwise, with the remaining seconds in the middle. It keeps
+ * no time of its own but follows one of the two existing countdowns:
+ * - [remainingFraction] set (the lead countdown before a prepared episode, which follows the playback
+ *   position): the ring glides to each new value over about one position update, and snaps when the
+ *   value jumps (a seek, a restart).
+ * - otherwise today's 3-2-1: each value animates the ring linearly from that value's share to the next
+ *   one over the second the launcher waits on it; a value that does not continue the previous one
+ *   snaps to where it starts.
+ * A new episode ([resetKey]) starts from a full ring.
  */
+/** About one playback position update (the player reports every 250 ms). */
+private const val POSITION_RING_GLIDE_MS = 250
+
+/** A step this large is a seek or a restart rather than playback, and is not animated. */
+private const val POSITION_RING_SNAP_FRACTION = 0.2f
+
 @Composable
 private fun NextEpisodeCountdownRing(
     countdownSec: Int,
+    remainingFraction: Float?,
     resetKey: String,
     modifier: Modifier = Modifier,
 ) {
-    val total = NEXT_EPISODE_COUNTDOWN_SECONDS.toFloat()
     val progress = remember(resetKey) { Animatable(1f) }
-    LaunchedEffect(resetKey, countdownSec) {
-        val start = (countdownSec / total).coerceIn(0f, 1f)
-        if (kotlin.math.abs(progress.value - start) > 0.02f) progress.snapTo(start)
-        progress.animateTo(
-            targetValue = ((countdownSec - 1) / total).coerceIn(0f, 1f),
-            animationSpec = tween(durationMillis = 1_000, easing = LinearEasing),
-        )
+    if (remainingFraction != null) {
+        LaunchedEffect(resetKey, remainingFraction) {
+            if (kotlin.math.abs(progress.value - remainingFraction) > POSITION_RING_SNAP_FRACTION) {
+                progress.snapTo(remainingFraction)
+            } else {
+                progress.animateTo(
+                    targetValue = remainingFraction,
+                    animationSpec = tween(durationMillis = POSITION_RING_GLIDE_MS, easing = LinearEasing),
+                )
+            }
+        }
+    } else {
+        val total = NEXT_EPISODE_COUNTDOWN_SECONDS.toFloat()
+        LaunchedEffect(resetKey, countdownSec) {
+            val start = (countdownSec / total).coerceIn(0f, 1f)
+            if (kotlin.math.abs(progress.value - start) > 0.02f) progress.snapTo(start)
+            progress.animateTo(
+                targetValue = ((countdownSec - 1) / total).coerceIn(0f, 1f),
+                animationSpec = tween(durationMillis = 1_000, easing = LinearEasing),
+            )
+        }
     }
     val accent = MaterialTheme.colorScheme.primary
     val track = Color.White.copy(alpha = 0.2f)

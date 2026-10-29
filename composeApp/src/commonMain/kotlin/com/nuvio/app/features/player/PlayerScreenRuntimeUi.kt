@@ -735,6 +735,8 @@ private fun BoxScope.RenderPlaybackOverlays(
         val snapshotIsLoading by remember(runtime) { derivedStateOf { playbackSnapshot.isLoading } }
         val snapshotDurationMs by remember(runtime) { derivedStateOf { playbackSnapshot.durationMs } }
         val displayedPositionMs = scrubbingPositionMs ?: overlaySnapshot.positionMs
+        // Re-evaluated per position update, but only recomposes the overlays while it counts down.
+        val leadCountdown by remember(runtime) { derivedStateOf { nextEpisodeLeadCountdown() } }
         PlayerPlaybackOverlays(
             playerControlsLocked = playerControlsLocked,
             useLegacyLayout = playerSettingsUiState.useLegacyPlayerLayout,
@@ -811,11 +813,14 @@ private fun BoxScope.RenderPlaybackOverlays(
         // episode is searched for or prepared, and not at all for an instant (prepared, no countdown)
         // switch. The controls' Next button stays available. With auto-play off it shows at the
         // threshold as before, for a manual Next.
-        showNextEpisodeCard = showNextEpisodeCard &&
-            (!playerSettingsUiState.streamAutoPlayNextEpisodeEnabled || nextEpisodeAutoPlayCountdown != null),
-        nextEpisodeAutoPlaySearching = nextEpisodeAutoPlaySearching,
-        nextEpisodeAutoPlaySourceName = nextEpisodeAutoPlaySourceName,
-        nextEpisodeAutoPlayCountdown = nextEpisodeAutoPlayCountdown,
+        showNextEpisodeCard = (showNextEpisodeCard &&
+            (!playerSettingsUiState.streamAutoPlayNextEpisodeEnabled || nextEpisodeAutoPlayCountdown != null)) ||
+            leadCountdown != null,
+        // An automatic run searches without the card; a tapped Next still shows "finding source".
+        nextEpisodeAutoPlaySearching = nextEpisodeAutoPlaySearching && !nextEpisodeAutoPlayAutomatic,
+        nextEpisodeAutoPlaySourceName = nextEpisodeAutoPlaySourceName ?: leadCountdown?.sourceName,
+        nextEpisodeAutoPlayCountdown = nextEpisodeAutoPlayCountdown ?: leadCountdown?.remainingSeconds,
+        nextEpisodeAutoPlayCountdownFraction = leadCountdown?.remainingFraction,
         blurUnwatchedEpisodes = metaScreenSettingsUiState.blurUnwatchedEpisodes,
         onPlayNextEpisode = {
             if (!partyBlocksControl()) playNextEpisode()
