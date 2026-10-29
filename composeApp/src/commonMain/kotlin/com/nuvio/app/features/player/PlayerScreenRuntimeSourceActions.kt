@@ -615,7 +615,9 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
     scope.launchPlayerNextEpisodeAutoPlay(
         previousJob = nextEpisodeAutoPlayJob,
         prepared = prepared,
-        onPreparedUnused = { releasePreparedNextEpisode(it) },
+        onPreparedUnused = { unused, cancelled ->
+            if (cancelled) restorePreparedNextEpisode(unused) else releasePreparedNextEpisode(unused)
+        },
         nextEpisodeInfo = nextEpisodeInfo,
         allEpisodes = playerMetaVideos,
         parentMetaId = parentMetaId,

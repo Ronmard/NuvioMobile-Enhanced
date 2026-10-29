@@ -242,6 +242,23 @@ private fun PlayerScreenRuntime.prebufferNextEpisode(prepared: PreparedNextEpiso
     }
 }
 
+/**
+ * Gives a preparation back to the prepare state when the run that took it was cancelled before
+ * switching (a scrub, a dismissed card, the threshold lost to a seek), so the next run (the outro,
+ * the end, a tap) still gets it instead of searching from scratch. Released when it no longer fits.
+ */
+internal fun PlayerScreenRuntime.restorePreparedNextEpisode(prepared: PreparedNextEpisode) {
+    val state = nextEpisodePrepare
+    if (state.prepared == null && state.job?.isActive != true &&
+        state.playbackKey == activePlaybackKey && nextEpisodeInfo?.videoId == prepared.videoId
+    ) {
+        state.prepared = prepared
+        NextEpisodeDiagnostics.log { "run cancelled before switching: preparation kept for the next run" }
+    } else {
+        releasePreparedNextEpisode(prepared)
+    }
+}
+
 /** Closes a pre-buffered stream that the transition did not use. */
 internal fun PlayerScreenRuntime.releasePreparedNextEpisode(prepared: PreparedNextEpisode) {
     if (!prepared.prebuffered) return

@@ -23,6 +23,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -93,7 +94,8 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     onCountdownChanged: (Int?) -> Unit,
     onNextEpisodeCardVisibleChanged: (Boolean) -> Unit,
     prepared: PreparedNextEpisode? = null,
-    onPreparedUnused: (PreparedNextEpisode) -> Unit = {},
+    /** [cancelled]: the run stopped before switching, so the preparation is still good for a later run. */
+    onPreparedUnused: (prepared: PreparedNextEpisode, cancelled: Boolean) -> Unit = { _, _ -> },
 ): Job? {
     val nextVideoId = nextEpisodeInfo?.videoId ?: return null
     val nextVideo = allEpisodes.firstOrNull { video -> video.id == nextVideoId } ?: return null
@@ -159,8 +161,8 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 }
             }
         } finally {
-            // Cancelled, re-resolved to a new link, or no selection: the pre-buffered stream goes unused.
-            if (prepared != null && !preparedUsed) onPreparedUnused(prepared)
+            // Cancelled, re-resolved to a new link, or no selection: the preparation goes unused.
+            if (prepared != null && !preparedUsed) onPreparedUnused(prepared, !isActive)
         }
     }
 }
