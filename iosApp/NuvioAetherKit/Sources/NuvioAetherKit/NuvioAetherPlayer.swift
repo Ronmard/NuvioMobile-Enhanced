@@ -362,8 +362,9 @@ public final class NuvioAetherPlayer {
         wantsPlay = true
         guard isLoaded else { return }
         if isEnded {
-            // .ended is terminal on AetherEngine; replay is a fresh load.
-            reload(startPositionSeconds: 0)
+            // Stays on the last frame, as mpv does with keep-open: a play() after the end (a resumed
+            // transport state, a system control) must not restart the episode under the next-episode
+            // flow. A restart comes as seek(toSeconds: 0) first, which reloads (.ended is terminal).
             return
         }
         engine.play()
@@ -382,6 +383,8 @@ public final class NuvioAetherPlayer {
             return
         }
         if isEnded {
+            // A seek at or past the end (a +10 s skip on the last frame) keeps the episode ended.
+            if engine.duration > 0, target >= engine.duration - 1 { return }
             reload(startPositionSeconds: target)
             return
         }
