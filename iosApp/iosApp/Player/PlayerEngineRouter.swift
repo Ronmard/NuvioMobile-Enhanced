@@ -89,8 +89,20 @@ final class PlayerEngineRouterBridge: NSObject, NuvioPlayerBridge {
         case .auto: engine = AetherPlayerBridgeImpl.canAttempt(audioUrl: audioUrl) ? .aether : .mpv
         }
         print("[PlayerEngineRouter] preferred=\(preferredEngine.rawValue) using=\(engine)")
-        // A load that is not the prepared one makes the preparation useless.
-        PreparedAetherPlayer.shared.discard(reason: "next load runs without it")
+        let prepared = PreparedAetherPlayer.shared
+        if prepared.hasPrepared, active == nil {
+            if engine == .aether, let adopted = prepared.take(matching: PreparedAetherPlayer.Arguments(
+                videoUrl: videoUrl,
+                headersJson: headersJson,
+                subtitlesJson: subtitlesJson
+            )) {
+                // The next episode is already loaded and paused; Kotlin's play() starts it.
+                activate(.aether, adopting: adopted)
+                adopted.didAdopt()
+                return
+            }
+            prepared.discard(reason: "next load runs on \(engine)")
+        }
         activate(engine)
         active?.loadFileWithAudio(
             videoUrl: load.videoUrl,
@@ -100,7 +112,11 @@ final class PlayerEngineRouterBridge: NSObject, NuvioPlayerBridge {
         )
     }
 
-    private func activate(_ engine: ActiveEngine, deferTeardownOfPrevious: Bool = false) {
+    private func activate(
+        _ engine: ActiveEngine,
+        deferTeardownOfPrevious: Bool = false,
+        adopting adopted: AetherPlayerBridgeImpl? = nil
+    ) {
         guard activeEngine != engine else { return }
         if let previous = active {
             container.removeEngineController()
@@ -115,7 +131,7 @@ final class PlayerEngineRouterBridge: NSObject, NuvioPlayerBridge {
         let bridge: NuvioPlayerBridge
         switch engine {
         case .aether:
-            let aether = AetherPlayerBridgeImpl()
+            let aether = adopted ?? AetherPlayerBridgeImpl()
             aether.onLoadFailed = { [weak self] message in self?.handleAetherLoadFailure(message) }
             bridge = aether
         case .mpv:

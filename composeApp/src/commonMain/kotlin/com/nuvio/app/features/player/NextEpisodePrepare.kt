@@ -93,6 +93,14 @@ internal fun PlayerScreenRuntime.BindNextEpisodePrepareEffects() {
         onNextEpisodePrepareTick()
     }
 
+    // The overlay suppression ends with the first load (or an error), like the overlay itself.
+    LaunchedEffect(initialLoadCompleted, errorMessage) {
+        if (nextEpisodeSeamlessSwap && (initialLoadCompleted || errorMessage != null)) {
+            NextEpisodeDiagnostics.log { "next episode ready, error=${errorMessage != null}" }
+            nextEpisodeSeamlessSwap = false
+        }
+    }
+
     DisposableEffect(Unit) {
         onDispose { discardPreparedNextEpisode("left player") }
     }

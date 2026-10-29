@@ -627,7 +627,16 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
             if (isCurrentRequest()) switchToDownloadedEpisode(item, episode) else logDropped("downloaded episode")
         },
         onEpisodeStreamSelected = { stream, episode ->
-            if (isCurrentRequest()) switchToEpisodeStream(stream, episode) else logDropped("stream selection")
+            if (isCurrentRequest()) {
+                val seamless = prepared?.prebuffered == true &&
+                    stream.playableDirectUrl == prepared.stream.playableDirectUrl
+                if (seamless) NextEpisodeDiagnostics.log { "switching to the pre-buffered engine" }
+                switchToEpisodeStream(stream, episode)
+                // After the switch: its reset of the previous episode's state must not clear it.
+                nextEpisodeSeamlessSwap = seamless
+            } else {
+                logDropped("stream selection")
+            }
         },
         onManualSelectionRequired = { nextVideo ->
             if (!isCurrentRequest()) logDropped("manual picker")

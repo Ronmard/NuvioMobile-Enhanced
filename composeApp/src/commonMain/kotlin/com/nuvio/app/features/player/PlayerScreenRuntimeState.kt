@@ -227,6 +227,8 @@ internal class PlayerScreenRuntime(
     var nextEpisodePreloadJob by mutableStateOf<Job?>(null)
     var nextEpisodePreloadTriggered by mutableStateOf(false)
     val nextEpisodePrepare = NextEpisodePrepareState()
+    /** The next episode is starting from a pre-buffered engine: no opening overlay over it. */
+    var nextEpisodeSeamlessSwap by mutableStateOf(false)
     var pendingP2pSwitch by mutableStateOf<PendingPlayerP2pSwitch?>(null)
     var credentialRefreshJob by mutableStateOf<Job?>(null)
     var credentialRefreshAttemptedSourceUrl by mutableStateOf<String?>(null)

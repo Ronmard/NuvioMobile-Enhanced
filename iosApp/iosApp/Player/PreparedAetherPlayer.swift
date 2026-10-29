@@ -68,6 +68,44 @@ final class PreparedAetherPlayer {
         log("prepare start startMs=\(startPositionMs) headers=\(arguments.headersJson != nil) subtitles=\(arguments.subtitlesJson != nil)")
     }
 
+    /// Asked by an outgoing AetherEngine before it tears down: true keeps the audio session up for
+    /// the prepared engine. If nothing adopts it soon, the preparation is dropped and the session with it.
+    func holdsAudioSessionForHandoff() -> Bool {
+        guard bridge != nil, !failed else { return false }
+        sessionHeldForHandoff = true
+        let pending = bridge
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.handoffTimeout) { [weak self] in
+            guard let self, let pending, self.bridge === pending, self.sessionHeldForHandoff else { return }
+            self.discard(reason: "not adopted after the previous engine left")
+        }
+        return true
+    }
+
+    /// The prepared engine, when it was prepared for exactly [arguments] and is healthy. Otherwise the
+    /// preparation is discarded and nil returned, so the caller loads as before.
+    func take(matching arguments: Arguments) -> AetherPlayerBridgeImpl? {
+        guard let bridge, let prepared = self.arguments else { return nil }
+        guard prepared == arguments, !failed, bridge.getErrorMessage().isEmpty else {
+            log(
+                "prepared stream not used: url same=\(prepared.videoUrl == arguments.videoUrl) " +
+                    "headers same=\(prepared.headersJson == arguments.headersJson) " +
+                    "subtitles same=\(prepared.subtitlesJson == arguments.subtitlesJson) failed=\(failed)"
+            )
+            discard(reason: "load did not match")
+            return nil
+        }
+        log(
+            "adopting prepared engine loading=\(bridge.getIsLoading()) " +
+                "buffered=\(String(format: "%.1f", bridge.preparedBufferedSeconds))s " +
+                "age=\(Int(Date().timeIntervalSince(preparedAt)))s"
+        )
+        self.bridge = nil
+        self.arguments = nil
+        sessionHeldForHandoff = false
+        bridge.onLoadFailed = nil
+        return bridge
+    }
+
     func discard(reason: String) {
         guard let bridge else { return }
         log("discarded: \(reason)")

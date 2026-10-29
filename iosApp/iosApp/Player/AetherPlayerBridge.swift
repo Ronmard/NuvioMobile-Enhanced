@@ -241,7 +241,8 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
     func getProperty(name: String) -> String { "" }
 
     func destroy() {
-        destroy(keepAudioSession: false)
+        // With a prepared next episode waiting, the session stays up for it (see PreparedAetherPlayer).
+        destroy(keepAudioSession: PreparedAetherPlayer.shared.holdsAudioSessionForHandoff())
     }
 
     func destroy(keepAudioSession: Bool) {
@@ -263,6 +264,9 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
             autoplay: false
         ))
     }
+
+    /// The prepared player is now the active engine.
+    func didAdopt() { playerVC?.activateAudioSession() }
 
     var preparedBufferedSeconds: Double { playerVC?.bufferedSeconds ?? 0 }
 
