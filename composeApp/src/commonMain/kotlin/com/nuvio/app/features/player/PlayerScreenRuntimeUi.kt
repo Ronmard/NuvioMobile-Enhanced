@@ -807,7 +807,12 @@ private fun BoxScope.RenderPlaybackOverlays(
         overlayBottomPadding = overlayBottomPadding,
         isSeries = isSeries,
         nextEpisodeInfo = nextEpisodeInfo,
-        showNextEpisodeCard = showNextEpisodeCard,
+        // With auto-play on, the card only appears for the 3-2-1 before the switch: not while the next
+        // episode is searched for or prepared, and not at all for an instant (prepared, no countdown)
+        // switch. The controls' Next button stays available. With auto-play off it shows at the
+        // threshold as before, for a manual Next.
+        showNextEpisodeCard = showNextEpisodeCard &&
+            (!playerSettingsUiState.streamAutoPlayNextEpisodeEnabled || nextEpisodeAutoPlayCountdown != null),
         nextEpisodeAutoPlaySearching = nextEpisodeAutoPlaySearching,
         nextEpisodeAutoPlaySourceName = nextEpisodeAutoPlaySourceName,
         nextEpisodeAutoPlayCountdown = nextEpisodeAutoPlayCountdown,
