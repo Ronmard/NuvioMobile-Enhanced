@@ -604,7 +604,8 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
             !automatic -> "tap"
             playbackSnapshot.isEnded -> "end"
             else -> "threshold/outro"
-        },
+        } + " pos=${playbackSnapshot.positionMs} dur=${playbackSnapshot.durationMs} " +
+            "skipSegments=${skipIntervals.joinToString { "${it.type}@${it.startTime.toInt()}-${it.endTime.toInt()}" }}",
         videoId = nextVideoId,
     )
     fun logDropped(callback: String) = NextEpisodeDiagnostics.log {
