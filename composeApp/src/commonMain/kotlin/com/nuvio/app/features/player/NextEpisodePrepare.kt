@@ -18,7 +18,7 @@ import kotlin.time.TimeSource
 /** A sample this close after the previous one (and not before it) is normal playback, not a seek. */
 private const val PREPARE_CONTINUITY_MS = 3_000L
 
-/** After a seek or resume lands past the mark, this much uninterrupted playback also prepares. */
+/** After a resume that starts past the mark, this much uninterrupted playback also prepares. */
 private const val PREPARE_SETTLE_MS = 10_000L
 
 /** Debrid links are cached for 15 minutes (DirectDebridResolver); re-resolve a prepared pick after that. */
@@ -148,12 +148,20 @@ private fun PlayerScreenRuntime.onNextEpisodePrepareTick() {
     }
     if (state.fired || lastMs == null) return
 
-    // Fires when normal playback crosses the mark. A seek or resume that lands past it waits until
-    // playback has run on for PREPARE_SETTLE_MS, so scrubbing around the end opens no connections.
+    // Fires when normal playback crosses the mark and when a seek lands past it (scrubbing itself
+    // returns above, so only the landing counts). A resume that starts past the mark waits until
+    // playback has run on for PREPARE_SETTLE_MS.
     val crossed = continuous && lastMs < triggerMs
+    val seekedPast = !continuous
     val settled = continuous && positionMs - maxOf(state.settleAnchorMs ?: positionMs, triggerMs) >= PREPARE_SETTLE_MS
-    if (crossed || settled) {
-        startNextEpisodePrepare(cause = if (crossed) "playback crossed" else "settled after seek")
+    if (crossed || seekedPast || settled) {
+        startNextEpisodePrepare(
+            cause = when {
+                crossed -> "playback crossed"
+                seekedPast -> "seek landed past the mark"
+                else -> "settled after resume"
+            },
+        )
     }
 }
 
