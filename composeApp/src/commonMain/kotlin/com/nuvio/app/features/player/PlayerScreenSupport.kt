@@ -25,6 +25,8 @@ internal const val P2pInitialDeliveryStageWeight = 0.30f
 internal const val P2pInitialPlayerStageStart = 0.75f
 internal const val P2pInitialLoadingMaximum = 0.95f
 internal const val NEXT_EPISODE_HARD_TIMEOUT_MS = 120_000L
+/** Length of the next-episode 3-2-1, in one-second steps; the card's countdown ring reads it too. */
+internal const val NEXT_EPISODE_COUNTDOWN_SECONDS = 3
 
 internal fun p2pInitialLoadingProgress(
     bufferedAheadMs: Long,

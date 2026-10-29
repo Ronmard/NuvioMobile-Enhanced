@@ -160,7 +160,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                     if (skipCountdown) {
                         NextEpisodeDiagnostics.log { "countdown skipped: prepared episode ready" }
                     } else {
-                        for (i in 3 downTo 1) {
+                        for (i in NEXT_EPISODE_COUNTDOWN_SECONDS downTo 1) {
                             onCountdownChanged(i)
                             delay(1000)
                         }

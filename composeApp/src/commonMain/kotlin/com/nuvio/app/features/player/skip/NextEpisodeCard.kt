@@ -1,6 +1,8 @@
 package com.nuvio.app.features.player.skip
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
@@ -8,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,8 +45,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -55,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.ui.PlatformBackHandler
+import com.nuvio.app.features.player.NEXT_EPISODE_COUNTDOWN_SECONDS
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.compose_player_episode_title_format
 import nuvio.composeapp.generated.resources.detail_btn_play
@@ -98,6 +107,13 @@ fun NextEpisodeCard(
             dragOffsetX = 0f
         }
     }
+    // The countdown and the card's visibility drop in the same frame at the switch; the ring keeps its
+    // last value while the card animates out instead of the Play badge flashing in.
+    var exitCountdownSec by remember(nextEpisode.videoId) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(autoPlayCountdownSec, visible) {
+        if (visible) exitCountdownSec = autoPlayCountdownSec
+    }
+    val ringCountdownSec = if (visible) autoPlayCountdownSec else exitCountdownSec
 
     AnimatedVisibility(
         visible = visible,
@@ -232,32 +248,106 @@ fun NextEpisodeCard(
                 }
             }
 
-            // Play badge
-            Row(
-                modifier = Modifier
-                    .padding(start = 4.dp)
-                    .clip(CircleShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
-                    .padding(horizontal = 8.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = if (isPlayable) Color.White else Color.White.copy(alpha = 0.65f),
-                    modifier = Modifier.size(13.dp),
+            if (ringCountdownSec != null) {
+                NextEpisodeCountdownRing(
+                    countdownSec = ringCountdownSec,
+                    resetKey = nextEpisode.videoId,
+                    modifier = Modifier.padding(start = 4.dp),
                 )
-                Text(
-                    text = if (isPlayable) {
-                        stringResource(Res.string.detail_btn_play)
-                    } else {
-                        stringResource(Res.string.player_next_episode_unaired)
-                    },
-                    color = if (isPlayable) Color.White else Color.White.copy(alpha = 0.72f),
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(start = 3.dp),
+            } else {
+                // Play badge
+                Row(
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                        .clip(CircleShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = if (isPlayable) Color.White else Color.White.copy(alpha = 0.65f),
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Text(
+                        text = if (isPlayable) {
+                            stringResource(Res.string.detail_btn_play)
+                        } else {
+                            stringResource(Res.string.player_next_episode_unaired)
+                        },
+                        color = if (isPlayable) Color.White else Color.White.copy(alpha = 0.72f),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(start = 3.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The 3-2-1 as a ring that empties clockwise, with the remaining seconds in the middle. It follows
+ * the existing countdown state rather than keeping time itself: each value (3, 2, 1) animates the
+ * ring linearly from that value's fraction to the next one over the second the launcher waits on it,
+ * so the sweep is continuous. A value that does not continue the previous one (a restart, a new
+ * episode via [resetKey]) snaps the ring to where that value starts.
+ */
+@Composable
+private fun NextEpisodeCountdownRing(
+    countdownSec: Int,
+    resetKey: String,
+    modifier: Modifier = Modifier,
+) {
+    val total = NEXT_EPISODE_COUNTDOWN_SECONDS.toFloat()
+    val progress = remember(resetKey) { Animatable(1f) }
+    LaunchedEffect(resetKey, countdownSec) {
+        val start = (countdownSec / total).coerceIn(0f, 1f)
+        if (kotlin.math.abs(progress.value - start) > 0.02f) progress.snapTo(start)
+        progress.animateTo(
+            targetValue = ((countdownSec - 1) / total).coerceIn(0f, 1f),
+            animationSpec = tween(durationMillis = 1_000, easing = LinearEasing),
+        )
+    }
+    val accent = MaterialTheme.colorScheme.primary
+    val track = Color.White.copy(alpha = 0.2f)
+    Box(
+        modifier = modifier.size(28.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidth = 2.5.dp.toPx()
+            val inset = strokeWidth / 2f
+            val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)
+            val topLeft = Offset(inset, inset)
+            drawArc(
+                color = track,
+                startAngle = 0f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = strokeWidth),
+            )
+            val remaining = progress.value
+            if (remaining > 0f) {
+                // The leading edge moves clockwise from 12 o'clock as the time runs out.
+                drawArc(
+                    color = accent,
+                    startAngle = -90f + 360f * (1f - remaining),
+                    sweepAngle = 360f * remaining,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
                 )
             }
         }
+        Text(
+            text = countdownSec.toString(),
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
