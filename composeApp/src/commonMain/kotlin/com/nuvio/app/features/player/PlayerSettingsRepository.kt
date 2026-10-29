@@ -101,6 +101,7 @@ data class PlayerSettingsUiState(
     val nextEpisodeThresholdPercent: Float = 99f,
     val nextEpisodeThresholdMinutesBeforeEnd: Float = 2f,
     val preloadNextEpisodeSources: Boolean = false,
+    val nextEpisodeCountdownEnabled: Boolean = false,
     val prebufferNextEpisodeEnabled: Boolean = true,
     val prepareNextEpisodePercent: Float = 70f,
     val prepareNextEpisodeEnabled: Boolean = true,
@@ -201,6 +202,7 @@ object PlayerSettingsRepository {
     private var nextEpisodeThresholdPercent = 99f
     private var nextEpisodeThresholdMinutesBeforeEnd = 2f
     private var preloadNextEpisodeSources = false
+    private var nextEpisodeCountdownEnabled = false
     private var prebufferNextEpisodeEnabled = true
     private var prepareNextEpisodePercent = 70f
     private var prepareNextEpisodeEnabled = true
@@ -306,6 +308,7 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = 99f
         nextEpisodeThresholdMinutesBeforeEnd = 2f
         preloadNextEpisodeSources = false
+        nextEpisodeCountdownEnabled = false
         prebufferNextEpisodeEnabled = true
         prepareNextEpisodePercent = 70f
         prepareNextEpisodeEnabled = true
@@ -474,6 +477,7 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = PlayerSettingsStorage.loadNextEpisodeThresholdPercent() ?: 99f
         nextEpisodeThresholdMinutesBeforeEnd = PlayerSettingsStorage.loadNextEpisodeThresholdMinutesBeforeEnd() ?: 2f
         preloadNextEpisodeSources = PlayerSettingsStorage.loadPreloadNextEpisodeSources() ?: false
+        nextEpisodeCountdownEnabled = PlayerSettingsStorage.loadNextEpisodeCountdownEnabled() ?: false
         prebufferNextEpisodeEnabled = PlayerSettingsStorage.loadPrebufferNextEpisodeEnabled() ?: true
         prepareNextEpisodePercent = PlayerSettingsStorage.loadPrepareNextEpisodePercent() ?: 70f
         prepareNextEpisodeEnabled = PlayerSettingsStorage.loadPrepareNextEpisodeEnabled() ?: true
@@ -1092,6 +1096,14 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.savePreloadNextEpisodeSources(enabled)
     }
 
+    fun setNextEpisodeCountdownEnabled(value: Boolean) {
+        ensureLoaded()
+        if (nextEpisodeCountdownEnabled == value) return
+        nextEpisodeCountdownEnabled = value
+        publish()
+        PlayerSettingsStorage.saveNextEpisodeCountdownEnabled(value)
+    }
+
     fun setPrebufferNextEpisodeEnabled(value: Boolean) {
         ensureLoaded()
         if (prebufferNextEpisodeEnabled == value) return
@@ -1406,6 +1418,7 @@ object PlayerSettingsRepository {
             nextEpisodeThresholdPercent = nextEpisodeThresholdPercent,
             nextEpisodeThresholdMinutesBeforeEnd = nextEpisodeThresholdMinutesBeforeEnd,
             preloadNextEpisodeSources = preloadNextEpisodeSources,
+            nextEpisodeCountdownEnabled = nextEpisodeCountdownEnabled,
             prebufferNextEpisodeEnabled = prebufferNextEpisodeEnabled,
             prepareNextEpisodePercent = prepareNextEpisodePercent,
             prepareNextEpisodeEnabled = prepareNextEpisodeEnabled,

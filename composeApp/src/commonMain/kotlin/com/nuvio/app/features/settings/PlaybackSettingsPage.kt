@@ -1612,6 +1612,14 @@ private fun PlaybackSettingsSection(
                         onCheckedChange = PlayerSettingsRepository::setPrebufferNextEpisodeEnabled,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_next_episode_countdown),
+                        description = stringResource(Res.string.settings_playback_next_episode_countdown_description),
+                        checked = autoPlayPlayerSettings.nextEpisodeCountdownEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setNextEpisodeCountdownEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
                 }
                 var showThresholdModeDialog by remember { mutableStateOf(false) }
                 SettingsNavigationRow(

@@ -91,6 +91,7 @@ actual object PlayerSettingsStorage {
     private const val nextEpisodeThresholdPercentKey = "next_episode_threshold_percent_v2"
     private const val nextEpisodeThresholdMinutesBeforeEndKey = "next_episode_threshold_minutes_before_end_v2"
     private const val preloadNextEpisodeSourcesKey = "preload_next_episode_sources"
+    private const val nextEpisodeCountdownEnabledKey = "next_episode_countdown_enabled"
     private const val prebufferNextEpisodeEnabledKey = "prebuffer_next_episode_enabled"
     private const val prepareNextEpisodePercentKey = "prepare_next_episode_percent"
     private const val prepareNextEpisodeEnabledKey = "prepare_next_episode_enabled"
@@ -173,6 +174,7 @@ actual object PlayerSettingsStorage {
         nextEpisodeThresholdPercentKey,
         nextEpisodeThresholdMinutesBeforeEndKey,
         preloadNextEpisodeSourcesKey,
+        nextEpisodeCountdownEnabledKey,
         prebufferNextEpisodeEnabledKey,
         prepareNextEpisodePercentKey,
         prepareNextEpisodeEnabledKey,
@@ -1051,6 +1053,12 @@ actual object PlayerSettingsStorage {
         saveBoolean(prebufferNextEpisodeEnabledKey, value)
     }
 
+    actual fun loadNextEpisodeCountdownEnabled(): Boolean? = loadBoolean(nextEpisodeCountdownEnabledKey)
+
+    actual fun saveNextEpisodeCountdownEnabled(value: Boolean) {
+        saveBoolean(nextEpisodeCountdownEnabledKey, value)
+    }
+
     actual fun loadPreloadNextEpisodeSources(): Boolean? = loadBoolean(preloadNextEpisodeSourcesKey)
 
     actual fun savePreloadNextEpisodeSources(enabled: Boolean) {
@@ -1300,6 +1308,7 @@ actual object PlayerSettingsStorage {
         loadNextEpisodeThresholdPercent()?.let { put(nextEpisodeThresholdPercentKey, encodeSyncFloat(it)) }
         loadNextEpisodeThresholdMinutesBeforeEnd()?.let { put(nextEpisodeThresholdMinutesBeforeEndKey, encodeSyncFloat(it)) }
         loadPreloadNextEpisodeSources()?.let { put(preloadNextEpisodeSourcesKey, encodeSyncBoolean(it)) }
+        loadNextEpisodeCountdownEnabled()?.let { put(nextEpisodeCountdownEnabledKey, encodeSyncBoolean(it)) }
         loadPrebufferNextEpisodeEnabled()?.let { put(prebufferNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
         loadPrepareNextEpisodePercent()?.let { put(prepareNextEpisodePercentKey, encodeSyncFloat(it)) }
         loadPrepareNextEpisodeEnabled()?.let { put(prepareNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
@@ -1392,6 +1401,7 @@ actual object PlayerSettingsStorage {
         payload.decodeSyncFloat(nextEpisodeThresholdPercentKey)?.let(::saveNextEpisodeThresholdPercent)
         payload.decodeSyncFloat(nextEpisodeThresholdMinutesBeforeEndKey)?.let(::saveNextEpisodeThresholdMinutesBeforeEnd)
         payload.decodeSyncBoolean(preloadNextEpisodeSourcesKey)?.let(::savePreloadNextEpisodeSources)
+        payload.decodeSyncBoolean(nextEpisodeCountdownEnabledKey)?.let(::saveNextEpisodeCountdownEnabled)
         payload.decodeSyncBoolean(prebufferNextEpisodeEnabledKey)?.let(::savePrebufferNextEpisodeEnabled)
         payload.decodeSyncFloat(prepareNextEpisodePercentKey)?.let(::savePrepareNextEpisodePercent)
         payload.decodeSyncBoolean(prepareNextEpisodeEnabledKey)?.let(::savePrepareNextEpisodeEnabled)

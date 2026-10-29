@@ -1339,6 +1339,8 @@
     <string name="settings_playback_prepare_next_episode_percent">Prepare Next Episode At</string>
     <string name="settings_playback_prepare_next_episode_percent_description">Percent of the episode watched before preparing starts.</string>
     <string name="settings_playback_prebuffer_next_episode">Pre-buffer Next Episode</string>
+    <string name="settings_playback_next_episode_countdown">Countdown Before Next Episode</string>
+    <string name="settings_playback_next_episode_countdown_description">Show the 3-2-1 countdown before switching to a prepared next episode. Off switches right away. Without a prepared episode the countdown always runs.</string>
     <string name="settings_playback_prebuffer_next_episode_description">Open the prepared stream in the background so the next episode starts without loading. AetherEngine only; uses a second connection to the source.</string>
     <string name="settings_playback_mini_player">Mini Player</string>
     <string name="settings_playback_mini_player_description">Shows the mini player button in the player so you can keep watching in a floating window while you browse. Picture in Picture when leaving the app works either way.</string>
