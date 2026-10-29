@@ -85,7 +85,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         playerControllerSourceUrl = null
         playbackSnapshot = PlayerPlaybackSnapshot()
         playbackSnapshotKey = null
-        cancelNextEpisodeAutoPlay()
+        cancelNextEpisodeAutoPlay("source changed")
         isScrubbingTimeline = false
         scrubbingPositionMs = null
         liveGestureFeedback = null
@@ -578,7 +578,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         skipIntervalDismissed = false
         showNextEpisodeCard = false
         nextEpisodeCardDismissed = false
-        cancelNextEpisodeAutoPlay()
+        cancelNextEpisodeAutoPlay("episode changed")
 
         val season = activeSeasonNumber
         val episode = activeEpisodeNumber
@@ -757,7 +757,10 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         if (nextEpisodeAutoPlayAutomatic &&
             (!shouldShow || !playerSettingsUiState.streamAutoPlayNextEpisodeEnabled)
         ) {
-            cancelNextEpisodeAutoPlay()
+            cancelNextEpisodeAutoPlay(
+                if (!playerSettingsUiState.streamAutoPlayNextEpisodeEnabled) "auto-play disabled"
+                else "threshold condition lost (${nextEpisodeThresholdBlockers()})",
+            )
         }
         if (shouldShow && !showNextEpisodeCard) {
             showNextEpisodeCard = true

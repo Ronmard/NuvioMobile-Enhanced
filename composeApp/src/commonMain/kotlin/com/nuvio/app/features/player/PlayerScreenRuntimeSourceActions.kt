@@ -599,6 +599,17 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
             ))
     if (!isCurrentRequest()) return
     nextEpisodeAutoPlayAutomatic = automatic
+    NextEpisodeDiagnostics.markTrigger(
+        cause = when {
+            !automatic -> "tap"
+            playbackSnapshot.isEnded -> "end"
+            else -> "threshold/outro"
+        },
+        videoId = nextVideoId,
+    )
+    fun logDropped(callback: String) = NextEpisodeDiagnostics.log {
+        "$callback dropped: request no longer current (${nextEpisodeThresholdBlockers()})"
+    }
 
     scope.launchPlayerNextEpisodeAutoPlay(
         previousJob = nextEpisodeAutoPlayJob,
@@ -610,12 +621,13 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
         settings = playerSettingsUiState,
         currentStreamBingeGroup = currentStreamBingeGroup,
         onDownloadedEpisodeSelected = { item, episode ->
-            if (isCurrentRequest()) switchToDownloadedEpisode(item, episode)
+            if (isCurrentRequest()) switchToDownloadedEpisode(item, episode) else logDropped("downloaded episode")
         },
         onEpisodeStreamSelected = { stream, episode ->
-            if (isCurrentRequest()) switchToEpisodeStream(stream, episode)
+            if (isCurrentRequest()) switchToEpisodeStream(stream, episode) else logDropped("stream selection")
         },
         onManualSelectionRequired = { nextVideo ->
+            if (!isCurrentRequest()) logDropped("manual picker")
             if (isCurrentRequest()) {
                 nextEpisodeCardDismissed = true
                 episodeStreamsPanelState = EpisodeStreamsPanelState(
@@ -691,7 +703,7 @@ private fun PlayerScreenRuntime.resetEpisodePanelAndNextEpisodeState() {
     showLiveChannelsPanel = false
     showChaptersPanel = false
     episodeStreamsPanelState = EpisodeStreamsPanelState()
-    cancelNextEpisodeAutoPlay()
+    cancelNextEpisodeAutoPlay("episode or source switched")
     PlayerStreamsRepository.clearEpisodeStreams()
 }
 

@@ -815,7 +815,7 @@ private fun BoxScope.RenderPlaybackOverlays(
             if (!partyBlocksControl()) playNextEpisode()
         },
         onDismissNextEpisode = {
-            cancelNextEpisodeAutoPlay()
+            cancelNextEpisodeAutoPlay("card dismissed")
             nextEpisodeCardDismissed = true
             showNextEpisodeCard = false
         },
