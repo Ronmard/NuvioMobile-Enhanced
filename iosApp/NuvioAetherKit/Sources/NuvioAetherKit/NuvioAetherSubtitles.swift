@@ -1,13 +1,14 @@
+import CoreGraphics
 import Foundation
 @_implementationOnly import AetherEngine
 
-/// A text subtitle cue as the host overlay draws it. Times are on the engine's source axis, the same
-/// axis as `NuvioAetherPlayer.subtitleClockSeconds`.
+/// A subtitle cue as the host overlays draw it: text, or a decoded bitmap (`bitmap`). Times are on the
+/// engine's source axis, the same axis as `NuvioAetherPlayer.subtitleClockSeconds`.
 public struct NuvioAetherSubtitleCue: Equatable {
     public let id: Int
     public let startSeconds: Double
     public let endSeconds: Double
-    /// Plain text with styling flattened away; lines separated by "\n".
+    /// Plain text with styling flattened away; lines separated by "\n". Empty for a bitmap cue.
     public let text: String
     /// ASS numpad alignment the cue asked for (`\an`), nil for the host's default (bottom centre).
     public let alignment: Int?
@@ -15,11 +16,47 @@ public struct NuvioAetherSubtitleCue: Equatable {
     /// line) when the track is styled ASS/SSA, for a libass renderer; `text` then holds the same lines
     /// flattened for the plain-text fallback. nil for every other track.
     public let assEvents: String?
+    /// The decoded picture of a bitmap cue (PGS / DVB / DVD), nil for text.
+    public let bitmap: NuvioAetherSubtitleBitmap?
+}
+
+/// A decoded bitmap subtitle (PGS / DVB / DVD).
+public struct NuvioAetherSubtitleBitmap: Equatable {
+    /// Fully rendered RGBA, premultiplied alpha.
+    public let image: CGImage
+    /// Where the image goes, normalized ([0, 1], y from the top) against `canvasSize`.
+    public let position: CGRect
+    /// Pixel size of the subtitle canvas (e.g. 1920x1080), `.zero` when unknown: `position` is then
+    /// normalized against the video frame. Map the canvas onto the picture width-aligned and centred
+    /// vertically: a cropped rip's canvas can be taller than its video.
+    public let canvasSize: CGSize
+    /// The disc authored this object as a forced caption.
+    public let isForced: Bool
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.image === rhs.image && lhs.position == rhs.position && lhs.canvasSize == rhs.canvasSize
+            && lhs.isForced == rhs.isForced
+    }
 }
 
 extension NuvioAetherSubtitleCue {
-    /// Text cues only: bitmap cues (PGS / DVB / DVD) are not drawn by the host overlay yet.
     static func make(from cue: SubtitleCue) -> NuvioAetherSubtitleCue? {
+        if case .image(let image) = cue.body {
+            return NuvioAetherSubtitleCue(
+                id: cue.id,
+                startSeconds: cue.startTime,
+                endSeconds: cue.endTime,
+                text: "",
+                alignment: nil,
+                assEvents: nil,
+                bitmap: NuvioAetherSubtitleBitmap(
+                    image: image.cgImage,
+                    position: image.position,
+                    canvasSize: image.canvasSize,
+                    isForced: image.isForced
+                )
+            )
+        }
         guard let text = cue.text else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -30,7 +67,8 @@ extension NuvioAetherSubtitleCue {
                 endSeconds: cue.endTime,
                 text: ass.plainText,
                 alignment: ass.alignment,
-                assEvents: trimmed
+                assEvents: trimmed,
+                bitmap: nil
             )
         }
         return NuvioAetherSubtitleCue(
@@ -39,7 +77,8 @@ extension NuvioAetherSubtitleCue {
             endSeconds: cue.endTime,
             text: trimmed,
             alignment: cue.placement?.alignment,
-            assEvents: nil
+            assEvents: nil,
+            bitmap: nil
         )
     }
 }

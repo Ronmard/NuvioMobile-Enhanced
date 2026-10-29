@@ -8,8 +8,8 @@ import ComposeApp
 /// AetherEngine-backed implementation of the Kotlin player bridge.
 ///
 /// Covers load, transport, position/duration, audio/subtitle track lists and selection,
-/// text subtitles (drawn by `AetherSubtitleOverlayView`), styled ASS (libass, `AetherStyledSubtitleView`),
-/// playback state and errors. mpv-specific
+/// text subtitles (drawn by `AetherSubtitleOverlayView`), styled ASS (libass) and bitmap subtitles (both
+/// `AetherStyledSubtitleView`), playback state and errors. mpv-specific
 /// calls (video output tuning, raw property reads) and features not wired to AetherEngine yet
 /// (PiP, Now Playing) are safe no-ops.
 final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
@@ -163,7 +163,7 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
         return t[Int(at)].selected
     }
 
-    // Subtitle tracks (text cues are drawn by the overlay; bitmap tracks list but do not draw yet)
+    // Subtitle tracks (text cues are drawn by the overlay, styled ASS and bitmap cues by the styled layer)
     func getSubtitleTrackCount() -> Int32 { Int32(playerVC?.subtitleTracks.count ?? 0) }
     func getSubtitleTrackIndex(at: Int32) -> Int32 {
         guard let t = playerVC?.subtitleTracks, Int(at) < t.count else { return 0 }
@@ -499,11 +499,13 @@ final class AetherPlayerViewController: UIViewController {
         }
     }
 
-    /// Cues with raw ASS events are libass's while it runs; otherwise the overlay draws their plain text.
+    /// Bitmap cues are the styled layer's, and so are cues with raw ASS events while libass runs;
+    /// otherwise the overlay draws their plain text.
     private func updateTextOverlayCues() {
-        subtitleOverlay.cues = styledSubtitles.isRenderingASS
-            ? subtitleCues.filter { $0.assEvents == nil }
-            : subtitleCues
+        let drawsASS = styledSubtitles.isRenderingASS
+        subtitleOverlay.cues = subtitleCues.filter { cue in
+            cue.bitmap == nil && !(drawsASS && cue.assEvents != nil)
+        }
     }
 
     // MARK: - Tracks

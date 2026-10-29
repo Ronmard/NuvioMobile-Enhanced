@@ -2,17 +2,18 @@ import AVFoundation
 import UIKit
 import NuvioAetherKit
 
-/// Draws authored subtitles over the AetherEngine picture: styled ASS/SSA through libass, laid out in
-/// the on-screen video rect and kept in step with playback.
+/// Draws authored subtitles over the AetherEngine picture: styled ASS/SSA through libass and decoded
+/// bitmap cues (PGS / DVB / DVD), laid out in the on-screen video rect and kept in step with playback.
 ///
 /// Sits between the video surface and `AetherSubtitleOverlayView`; the overlay keeps drawing every
-/// cue this view does not (`isRenderingASS` says which).
+/// cue this view does not (`isRenderingASS` and `NuvioAetherSubtitleCue.bitmap` say which).
 final class AetherStyledSubtitleView: UIView {
 
     struct VideoGeometry {
         /// Picture shape as presented (coded size under the pixel aspect).
         let displaySize: CGSize
-        /// Coded size, the frame libass treats as the script's storage.
+        /// Coded size: the frame libass treats as the script's storage, and the pixel grid bitmap
+        /// canvases are authored on.
         let codedSize: CGSize
     }
 
@@ -21,15 +22,15 @@ final class AetherStyledSubtitleView: UIView {
 
     /// 0 = Fit, 1 = Fill (stretch), 2 = Zoom (crop), as the bridge's resize modes.
     var resizeMode = 0 {
-        didSet { if resizeMode != oldValue { requestRender() } }
+        didSet { if resizeMode != oldValue { refresh() } }
     }
     /// The zoom transform applied to the video surface.
     var videoZoom: CGFloat = 1 {
-        didSet { if videoZoom != oldValue { requestRender() } }
+        didSet { if videoZoom != oldValue { refresh() } }
     }
     /// mpv `sub-delay`: positive shows subtitles later.
     var delaySeconds: Double = 0 {
-        didSet { if delaySeconds != oldValue { requestRender() } }
+        didSet { if delaySeconds != oldValue { refresh() } }
     }
     /// mpv `sub-font`: the family text falls back to when a style's font is missing.
     var defaultFontFamily: String? {
@@ -40,6 +41,15 @@ final class AetherStyledSubtitleView: UIView {
     private(set) var isRenderingASS = false
 
     private let contentLayer = CALayer()
+    /// Cues carrying a bitmap, in the engine's order (later ones layer over earlier ones).
+    private var bitmapCues: [NuvioAetherSubtitleCue] = []
+    private var bitmapLayers: [Int: CALayer] = [:]
+    private var shownBitmapLayout: BitmapLayout?
+
+    private struct BitmapLayout: Equatable {
+        let cueIds: [Int]
+        let videoRect: CGRect
+    }
     private var renderer: AetherASSRenderer?
     private var didFailToCreateRenderer = false
     private var displayLink: CADisplayLink?
@@ -84,7 +94,7 @@ final class AetherStyledSubtitleView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        requestRender()
+        refresh()
     }
 
     // MARK: - Content
@@ -114,9 +124,16 @@ final class AetherStyledSubtitleView: UIView {
         requestRender()
     }
 
-    /// The selected track's cues; only those carrying raw ASS events are drawn here.
+    /// The selected track's cues; those carrying raw ASS events or a bitmap are drawn here.
     var cues: [NuvioAetherSubtitleCue] = [] {
         didSet {
+            let bitmaps = cues.filter { $0.bitmap != nil }
+            if bitmaps != bitmapCues {
+                bitmapCues = bitmaps
+                shownBitmapLayout = nil
+                updateDisplayLink()
+                updateBitmaps()
+            }
             guard isRenderingASS, let renderer else { return }
             if cues.isEmpty {
                 renderer.flushEvents()
@@ -138,7 +155,10 @@ final class AetherStyledSubtitleView: UIView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         contentLayer.contents = nil
+        bitmapLayers.values.forEach { $0.removeFromSuperlayer() }
         CATransaction.commit()
+        bitmapLayers = [:]
+        shownBitmapLayout = nil
         shownPixelRect = .null
         lastRequest = nil
     }
@@ -146,21 +166,106 @@ final class AetherStyledSubtitleView: UIView {
     // MARK: - Timing
 
     private func updateDisplayLink() {
-        let wantsTicks = window != nil && isRenderingASS
+        let wantsTicks = window != nil && (isRenderingASS || !bitmapCues.isEmpty)
         if wantsTicks, displayLink == nil {
             let link = CADisplayLink(target: StyledSubtitleDisplayLinkProxy(self), selector: #selector(StyledSubtitleDisplayLinkProxy.tick))
-            // Moves, fades and karaoke sweeps animate per frame.
-            link.preferredFrameRateRange = CAFrameRateRange(minimum: 24, maximum: 60, preferred: 60)
             link.add(to: .main, forMode: .common)
             displayLink = link
         } else if !wantsTicks, let link = displayLink {
             link.invalidate()
             displayLink = nil
         }
+        // ASS moves, fades and karaoke sweeps animate per frame; bitmaps only switch on and off.
+        displayLink?.preferredFrameRateRange = isRenderingASS
+            ? CAFrameRateRange(minimum: 24, maximum: 60, preferred: 60)
+            : CAFrameRateRange(minimum: 15, maximum: 30, preferred: 30)
     }
 
     fileprivate func tick() {
+        refresh()
+    }
+
+    private func refresh() {
         requestRender()
+        updateBitmaps()
+    }
+
+    // MARK: - Bitmaps
+
+    /// Shows the bitmap cues due now, one layer each, scaled onto the video rect by Core Animation.
+    private func updateBitmaps() {
+        guard !bitmapCues.isEmpty || !bitmapLayers.isEmpty else { return }
+        guard let geometry = videoGeometry?(), let clock = clock?(), bounds.width > 0, bounds.height > 0 else {
+            removeBitmapLayers(keeping: [])
+            return
+        }
+        let rect = Self.videoRect(displaySize: geometry.displaySize, in: bounds, resizeMode: resizeMode, zoom: videoZoom)
+        let time = clockInterpolator.time(for: clock) - delaySeconds
+        let active = bitmapCues.filter { $0.startSeconds <= time && time < $0.endSeconds }
+        let layout = BitmapLayout(cueIds: active.map(\.id), videoRect: rect)
+        guard layout != shownBitmapLayout else { return }
+        shownBitmapLayout = layout
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        removeBitmapLayers(keeping: Set(layout.cueIds))
+        for cue in active {
+            guard let bitmap = cue.bitmap else { continue }
+            let bitmapLayer: CALayer
+            if let existing = bitmapLayers[cue.id] {
+                bitmapLayer = existing
+            } else {
+                bitmapLayer = CALayer()
+                bitmapLayer.contentsGravity = .resize
+                bitmapLayer.minificationFilter = .trilinear
+                bitmapLayers[cue.id] = bitmapLayer
+            }
+            // Cue ids restart with each engine session, so never trust a reused layer's picture.
+            bitmapLayer.contents = bitmap.image
+            bitmapLayer.frame = Self.bitmapFrame(bitmap, codedSize: geometry.codedSize, in: rect)
+            // Re-adding keeps the engine's order: a later cue draws over an earlier one.
+            layer.addSublayer(bitmapLayer)
+        }
+        CATransaction.commit()
+    }
+
+    private func removeBitmapLayers(keeping ids: Set<Int>) {
+        guard bitmapLayers.keys.contains(where: { !ids.contains($0) }) else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (id, bitmapLayer) in bitmapLayers where !ids.contains(id) {
+            bitmapLayer.removeFromSuperlayer()
+            bitmapLayers[id] = nil
+        }
+        CATransaction.commit()
+        if ids.isEmpty { shownBitmapLayout = nil }
+    }
+
+    /// The `SubtitleImage` contract: `position` is normalized against the canvas; the canvas maps onto
+    /// the coded picture width-aligned and centred vertically (a cropped rip's canvas is taller than its
+    /// video), and the coded picture onto `videoRect`. A `.zero` canvas is the video frame itself.
+    static func bitmapFrame(_ bitmap: NuvioAetherSubtitleBitmap, codedSize: CGSize, in videoRect: CGRect) -> CGRect {
+        let position = bitmap.position
+        let canvas = bitmap.canvasSize
+        guard canvas.width > 0, canvas.height > 0, codedSize.width > 0, codedSize.height > 0 else {
+            return CGRect(
+                x: videoRect.minX + position.minX * videoRect.width,
+                y: videoRect.minY + position.minY * videoRect.height,
+                width: position.width * videoRect.width,
+                height: position.height * videoRect.height
+            )
+        }
+        // Canvas pixels to coded pixels, then coded pixels to points (per axis: Fill stretches and
+        // anamorphic video presents wider than it is coded).
+        let canvasToCoded = codedSize.width / canvas.width
+        let scaleX = canvasToCoded * videoRect.width / codedSize.width
+        let scaleY = canvasToCoded * videoRect.height / codedSize.height
+        return CGRect(
+            x: videoRect.minX + position.minX * canvas.width * scaleX,
+            y: videoRect.midY + (position.minY - 0.5) * canvas.height * scaleY,
+            width: position.width * canvas.width * scaleX,
+            height: position.height * canvas.height * scaleY
+        )
     }
 
     // MARK: - Rendering

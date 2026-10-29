@@ -34,7 +34,7 @@ public final class NuvioAetherPlayer {
     public private(set) var subtitleTracks: [NuvioAetherTrack] = []
     public private(set) var errorMessage = ""
 
-    /// Text cues of the selected subtitle track, for the host overlay. Bitmap cues are left out.
+    /// Cues of the selected subtitle track (text and bitmap), for the host overlays.
     public private(set) var subtitleCues: [NuvioAetherSubtitleCue] = []
     /// Called on the main thread whenever `subtitleCues` changes.
     public var onSubtitleCuesChanged: (([NuvioAetherSubtitleCue]) -> Void)?
