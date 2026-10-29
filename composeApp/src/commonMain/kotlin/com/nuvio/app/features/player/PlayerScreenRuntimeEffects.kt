@@ -41,6 +41,7 @@ import com.nuvio.app.features.watching.application.WatchingState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 
@@ -535,6 +536,10 @@ private fun PlayerScreenRuntime.BindPlayerUiVisibilityEffects() {
     }
 }
 
+/** How long the skip-segment lookup waits for the show's metadata to learn its IMDb id. */
+private const val SKIP_LOOKUP_META_WAIT_MS = 15_000L
+private const val SKIP_LOOKUP_META_POLL_MS = 250L
+
 @Composable
 private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
     val shuffleProfile by remember {
@@ -607,10 +612,28 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                     SkipIntroRepository.getSkipIntervalsForKitsu(kitsuId = kitsuId, episode = episode, imdbId = imdbFromContent, imdbSeason = season, imdbEpisode = episode)
                 }
                 else -> SkipIntroRepository.getSkipIntervals(
-                    imdbId = vid.substringBefore(':').takeIf { it.startsWith("tt") },
+                    // A tmdb:/other video id carries no IMDb id; IntroDB is keyed by the show's, so take
+                    // it from the metadata (waiting briefly for it to load) instead of skipping the lookup.
+                    imdbId = vid.substringBefore(':').takeIf { it.startsWith("tt") }
+                        ?: imdbFromContent
+                        ?: withTimeoutOrNull(SKIP_LOOKUP_META_WAIT_MS) {
+                            var showImdbId: String? = null
+                            while (showImdbId == null) {
+                                delay(SKIP_LOOKUP_META_POLL_MS)
+                                showImdbId = (metaUiState.meta ?: playerMeta)
+                                    ?.takeIf { it.id == parentMetaId }
+                                    ?.imdbId
+                                    ?.takeIf { it.startsWith("tt") }
+                            }
+                            showImdbId
+                        },
                     season = season,
                     episode = episode,
                 )
+            }
+            NextEpisodeDiagnostics.log {
+                "skip segments loaded videoId=$vid count=${intervals.size} " +
+                    intervals.joinToString { "${it.type}@${it.startTime.toInt()}-${it.endTime.toInt()}" }
             }
             skipIntervals = intervals
         }
