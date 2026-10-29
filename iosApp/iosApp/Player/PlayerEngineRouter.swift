@@ -42,6 +42,8 @@ final class PlayerEngineRouterBridge: NSObject, NuvioPlayerBridge {
     private var activeEngine: ActiveEngine?
 
     private var lastLoad: LoadArguments?
+    /// Kept for a next-episode prepare, which applies them at load time.
+    private var audioLanguages: [String]?
     private var wantsPlay: Bool?
     private var lastSeekTargetMs: Int64?
     /// Position to restore on mpv after a fallback, applied once mpv has loaded the stream.
@@ -87,6 +89,8 @@ final class PlayerEngineRouterBridge: NSObject, NuvioPlayerBridge {
         case .auto: engine = AetherPlayerBridgeImpl.canAttempt(audioUrl: audioUrl) ? .aether : .mpv
         }
         print("[PlayerEngineRouter] preferred=\(preferredEngine.rawValue) using=\(engine)")
+        // A load that is not the prepared one makes the preparation useless.
+        PreparedAetherPlayer.shared.discard(reason: "next load runs without it")
         activate(engine)
         active?.loadFileWithAudio(
             videoUrl: load.videoUrl,
@@ -126,6 +130,8 @@ final class PlayerEngineRouterBridge: NSObject, NuvioPlayerBridge {
     private func handleAetherLoadFailure(_ message: String) {
         guard preferredEngine == .auto, activeEngine == .aether, let lastLoad else { return }
         print("[PlayerEngineRouter] AetherEngine could not play the stream (\(message)); falling back to mpv")
+        // The outgoing engine would keep the audio session for a prepared one; mpv takes over instead.
+        PreparedAetherPlayer.shared.discard(reason: "engine fell back to mpv")
 
         // Kotlin applies its resume seek once, as soon as the player stops loading; if that already
         // happened on AetherEngine, carry the position over to mpv.
@@ -146,6 +152,38 @@ final class PlayerEngineRouterBridge: NSObject, NuvioPlayerBridge {
         case false?: active?.pause()
         case nil: break
         }
+    }
+
+    // MARK: - Next-episode prepare
+
+    /// Loads the next episode paused on a second AetherEngine. Only while this router plays on
+    /// AetherEngine and the stream is one AetherEngine can take; mpv keeps today's behavior.
+    func prepareNextFile(
+        videoUrl: String,
+        audioUrl: String?,
+        headersJson: String?,
+        subtitlesJson: String?,
+        startPositionMs: Int64,
+        debugLogging: Bool
+    ) -> Bool {
+        guard activeEngine == .aether, preferredEngine != .mpv,
+              AetherPlayerBridgeImpl.canAttempt(audioUrl: audioUrl) else {
+            if debugLogging {
+                print("[NextEp][aether] prepare skipped: engine=\(String(describing: activeEngine)) preferred=\(preferredEngine.rawValue)")
+            }
+            return false
+        }
+        PreparedAetherPlayer.shared.prepare(
+            PreparedAetherPlayer.Arguments(videoUrl: videoUrl, headersJson: headersJson, subtitlesJson: subtitlesJson),
+            startPositionMs: startPositionMs,
+            audioLanguages: audioLanguages,
+            debugLogging: debugLogging
+        )
+        return true
+    }
+
+    func discardPreparedNextFile() {
+        PreparedAetherPlayer.shared.discard(reason: "discarded by the player")
     }
 
     // MARK: - Transport
@@ -229,6 +267,7 @@ final class PlayerEngineRouterBridge: NSObject, NuvioPlayerBridge {
         remember("audioOutput") { $0.configureAudioOutput(audioOutput: audioOutput) }
     }
     func applyAudioLanguagePreferences(languages: [String]) {
+        audioLanguages = languages
         remember("audioLanguages") { $0.applyAudioLanguagePreferences(languages: languages) }
     }
     func setPlaybackSpeed(speed: Float) {

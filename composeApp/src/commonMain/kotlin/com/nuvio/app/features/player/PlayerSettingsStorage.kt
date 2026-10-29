@@ -174,6 +174,8 @@ internal expect object PlayerSettingsStorage {
     fun saveNextEpisodeThresholdMinutesBeforeEnd(minutes: Float)
     fun loadPreloadNextEpisodeSources(): Boolean?
     fun savePreloadNextEpisodeSources(enabled: Boolean)
+    fun loadPrebufferNextEpisodeEnabled(): Boolean?
+    fun savePrebufferNextEpisodeEnabled(value: Boolean)
     fun loadPrepareNextEpisodePercent(): Float?
     fun savePrepareNextEpisodePercent(value: Float)
     fun loadPrepareNextEpisodeEnabled(): Boolean?

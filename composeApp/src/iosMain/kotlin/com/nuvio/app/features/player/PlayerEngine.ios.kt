@@ -127,6 +127,21 @@ actual fun PlatformPlayerSurface(
                 bridge.retry()
             }
 
+            // Encoded exactly as the load below, so the next surface's load matches the prepared one.
+            override fun prepareNextSource(source: PreparedPlayerSource): Boolean =
+                bridge.prepareNextFile(
+                    videoUrl = source.url,
+                    audioUrl = source.audioUrl,
+                    headersJson = encodePlaybackHeadersForBridge(source.headers),
+                    subtitlesJson = encodeExternalSubtitlesForBridge(source.externalSubtitles),
+                    startPositionMs = source.startPositionMs,
+                    debugLogging = NextEpisodeDiagnostics.enabled,
+                )
+
+            override fun discardPreparedNextSource() {
+                bridge.discardPreparedNextFile()
+            }
+
             override fun updateNowPlayingMetadata(info: PlayerNowPlayingInfo) {
                 runCatching {
                     bridge.updateNowPlayingMetadata(

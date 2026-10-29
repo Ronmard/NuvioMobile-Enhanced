@@ -105,6 +105,21 @@ interface NuvioPlayerBridge {
     fun setKeyboardShortcutsEnabled(enabled: Boolean)
     fun setKeyboardShortcutHandler(handler: ((String) -> Unit)?)
     fun getProperty(name: String): String
+
+    /**
+     * Loads the next episode paused on a second engine while this one plays (AetherEngine only);
+     * a later [loadFileWithAudio] with the same arguments, on a new bridge, adopts it. Returns
+     * false when this engine does not prepare.
+     */
+    fun prepareNextFile(
+        videoUrl: String,
+        audioUrl: String?,
+        headersJson: String?,
+        subtitlesJson: String?,
+        startPositionMs: Long,
+        debugLogging: Boolean,
+    ): Boolean
+    fun discardPreparedNextFile()
     fun destroy()
 }
 

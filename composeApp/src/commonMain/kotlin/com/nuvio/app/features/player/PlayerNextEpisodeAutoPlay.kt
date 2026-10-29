@@ -93,6 +93,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     onCountdownChanged: (Int?) -> Unit,
     onNextEpisodeCardVisibleChanged: (Boolean) -> Unit,
     prepared: PreparedNextEpisode? = null,
+    onPreparedUnused: (PreparedNextEpisode) -> Unit = {},
 ): Job? {
     val nextVideoId = nextEpisodeInfo?.videoId ?: return null
     val nextVideo = allEpisodes.firstOrNull { video -> video.id == nextVideoId } ?: return null
@@ -116,35 +117,42 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
 
     val type = contentType ?: parentMetaType
     return launch {
-        val preparedStream = prepared?.takeIf { it.videoId == nextVideo.id }?.playableStream()
-        val result = if (preparedStream != null) {
-            NextEpisodeDiagnostics.log { "using prepared stream source=${preparedStream.name ?: preparedStream.addonName}" }
-            NextEpisodeSearchResult.Selected(stream = preparedStream, sourceStream = prepared?.sourceStream ?: preparedStream)
-        } else {
-            searchNextEpisodeStream(nextVideo, type, settings, currentStreamBingeGroup, background = false)
-        }
-        onSearchingChanged(false)
-        when (result) {
-            is NextEpisodeSearchResult.Selected -> {
-                val selected = result.stream
-                onSourceNameChanged((selected.name?.takeIf { it.isNotBlank() } ?: selected.addonName).trim())
-                for (i in 3 downTo 1) {
-                    onCountdownChanged(i)
-                    delay(1000)
-                }
-                onEpisodeStreamSelected(selected, nextVideo)
-                onNextEpisodeCardVisibleChanged(false)
-                onCountdownChanged(null)
-                onSourceNameChanged(null)
+        var preparedUsed = false
+        try {
+            val preparedStream = prepared?.takeIf { it.videoId == nextVideo.id }?.playableStream()
+            val result = if (preparedStream != null) {
+                NextEpisodeDiagnostics.log { "using prepared stream source=${preparedStream.name ?: preparedStream.addonName}" }
+                NextEpisodeSearchResult.Selected(stream = preparedStream, sourceStream = prepared?.sourceStream ?: preparedStream)
+            } else {
+                searchNextEpisodeStream(nextVideo, type, settings, currentStreamBingeGroup, background = false)
             }
-            is NextEpisodeSearchResult.NoSelection -> {
-                NextEpisodeDiagnostics.log {
-                    "picker opened: reason=${result.reason} " +
-                        "state=${NextEpisodeDiagnostics.describe(PlayerStreamsRepository.episodeStreamsState.value)}"
+            onSearchingChanged(false)
+            when (result) {
+                is NextEpisodeSearchResult.Selected -> {
+                    val selected = result.stream
+                    onSourceNameChanged((selected.name?.takeIf { it.isNotBlank() } ?: selected.addonName).trim())
+                    for (i in 3 downTo 1) {
+                        onCountdownChanged(i)
+                        delay(1000)
+                    }
+                    preparedUsed = preparedStream != null && selected === preparedStream
+                    onEpisodeStreamSelected(selected, nextVideo)
+                    onNextEpisodeCardVisibleChanged(false)
+                    onCountdownChanged(null)
+                    onSourceNameChanged(null)
                 }
-                onManualSelectionRequired(nextVideo)
-                onNextEpisodeCardVisibleChanged(false)
+                is NextEpisodeSearchResult.NoSelection -> {
+                    NextEpisodeDiagnostics.log {
+                        "picker opened: reason=${result.reason} " +
+                            "state=${NextEpisodeDiagnostics.describe(PlayerStreamsRepository.episodeStreamsState.value)}"
+                    }
+                    onManualSelectionRequired(nextVideo)
+                    onNextEpisodeCardVisibleChanged(false)
+                }
             }
+        } finally {
+            // Cancelled, re-resolved to a new link, or no selection: the pre-buffered stream goes unused.
+            if (prepared != null && !preparedUsed) onPreparedUnused(prepared)
         }
     }
 }

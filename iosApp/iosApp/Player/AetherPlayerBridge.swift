@@ -241,10 +241,41 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
     func getProperty(name: String) -> String { "" }
 
     func destroy() {
+        destroy(keepAudioSession: false)
+    }
+
+    func destroy(keepAudioSession: Bool) {
         playerVC?.onLoadFailed = nil
-        playerVC?.destroyPlayer()
+        playerVC?.destroyPlayer(keepAudioSession: keepAudioSession)
         playerVC = nil
     }
+
+    // MARK: - Next-episode prepare (driven by PreparedAetherPlayer)
+
+    /// Loads the stream paused at [startPositionMs] so it buffers while another engine plays.
+    func prepareFileWithAudio(videoUrl: String, headersJson: String?, subtitlesJson: String?, startPositionMs: Int64) {
+        let vc = ensurePlayerViewController()
+        vc.load(AetherLoadRequest(
+            url: videoUrl,
+            headers: parseRequestHeaders(headersJson),
+            subtitles: parseSubtitles(subtitlesJson),
+            startPositionSeconds: startPositionMs > 0 ? Double(startPositionMs) / 1000.0 : nil,
+            autoplay: false
+        ))
+    }
+
+    var preparedBufferedSeconds: Double { playerVC?.bufferedSeconds ?? 0 }
+
+    // The router owns next-episode preparation; a bare engine bridge never prepares.
+    func prepareNextFile(
+        videoUrl: String,
+        audioUrl: String?,
+        headersJson: String?,
+        subtitlesJson: String?,
+        startPositionMs: Int64,
+        debugLogging: Bool
+    ) -> Bool { false }
+    func discardPreparedNextFile() {}
 
     private func parseRequestHeaders(_ headersJson: String?) -> [String: String] {
         guard
@@ -263,6 +294,10 @@ struct AetherLoadRequest {
     let url: String
     let headers: [String: String]
     let subtitles: [NuvioAetherExternalSubtitle]
+    var startPositionSeconds: Double? = nil
+    /// False for a next-episode prepare: loads paused and leaves the audio session to the engine
+    /// that is playing.
+    var autoplay = true
 }
 
 // MARK: - Aether Player View Controller
@@ -402,7 +437,7 @@ final class AetherPlayerViewController: UIViewController {
             player.failLoad("Invalid stream URL")
             return
         }
-        audioSession.activate()
+        if request.autoplay { audioSession.activate() }
         requestHeaders = request.headers
         // The engine router replays a remembered addon subtitle before the first load, so only a
         // later load (a different stream) invalidates downloads still in flight.
@@ -410,8 +445,19 @@ final class AetherPlayerViewController: UIViewController {
         hasLoaded = true
         subtitleOverlay.reset()
         styledSubtitles.reset()
-        player.load(url: url, headers: request.headers, externalSubtitles: request.subtitles)
+        player.load(
+            url: url,
+            headers: request.headers,
+            externalSubtitles: request.subtitles,
+            startPositionSeconds: request.startPositionSeconds,
+            autoplay: request.autoplay
+        )
     }
+
+    /// A prepared (paused, preloaded) player becomes the one on screen and takes over the audio session.
+    func activateAudioSession() { audioSession.activate() }
+
+    var bufferedSeconds: Double { player?.bufferedSeconds ?? 0 }
 
     func failLoad(_ message: String) {
         if let player {
@@ -424,7 +470,9 @@ final class AetherPlayerViewController: UIViewController {
 
     func retryPlayback() { player?.retry() }
 
-    func destroyPlayer() {
+    /// [keepAudioSession] leaves the shared session active, for a teardown with another AetherEngine
+    /// about to play (the prepared next episode), or for a prepared player that never owned it.
+    func destroyPlayer(keepAudioSession: Bool = false) {
         subtitleOverlay.clock = nil
         subtitleOverlay.reset()
         styledSubtitles.clock = nil
@@ -434,7 +482,11 @@ final class AetherPlayerViewController: UIViewController {
         player?.destroy()
         player?.view.removeFromSuperview()
         player = nil
-        audioSession.deactivate()
+        if keepAudioSession {
+            audioSession.releaseWithoutDeactivating()
+        } else {
+            audioSession.deactivate()
+        }
     }
 
     // MARK: - Transport

@@ -236,6 +236,17 @@ final class MPVPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
     func getMediaInfoJson() -> String { playerVC?.getMediaInfoJson() ?? "{}" }
     func getProperty(name: String) -> String { playerVC?.getString(name) ?? "" }
 
+    // Next-episode preparation is AetherEngine-only; mpv keeps today's load at the transition.
+    func prepareNextFile(
+        videoUrl: String,
+        audioUrl: String?,
+        headersJson: String?,
+        subtitlesJson: String?,
+        startPositionMs: Int64,
+        debugLogging: Bool
+    ) -> Bool { false }
+    func discardPreparedNextFile() {}
+
     func destroy() {
         playerVC?.systemControlHandler = nil
         playerVC?.destroyPlayer()

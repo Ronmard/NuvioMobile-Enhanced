@@ -777,6 +777,7 @@ internal object SettingsConfigTransfer {
         PlayerSettingsStorage.loadNextEpisodeThresholdPercent()?.let { put("next_episode_threshold_percent", encodeSyncFloat(it)) }
         PlayerSettingsStorage.loadNextEpisodeThresholdMinutesBeforeEnd()?.let { put("next_episode_threshold_minutes_before_end", encodeSyncFloat(it)) }
         PlayerSettingsStorage.loadPreloadNextEpisodeSources()?.let { put("preload_next_episode_sources", encodeSyncBoolean(it)) }
+        PlayerSettingsStorage.loadPrebufferNextEpisodeEnabled()?.let { put("prebuffer_next_episode_enabled", encodeSyncBoolean(it)) }
         PlayerSettingsStorage.loadPrepareNextEpisodePercent()?.let { put("prepare_next_episode_percent", encodeSyncFloat(it)) }
         PlayerSettingsStorage.loadPrepareNextEpisodeEnabled()?.let { put("prepare_next_episode_enabled", encodeSyncBoolean(it)) }
         PlayerSettingsStorage.loadMiniPlayerEnabled()?.let { put("mini_player_enabled", encodeSyncBoolean(it)) }
@@ -883,6 +884,7 @@ internal object SettingsConfigTransfer {
         payload.decodeSyncFloat("next_episode_threshold_percent")?.let { PlayerSettingsStorage.saveNextEpisodeThresholdPercent(it) }
         payload.decodeSyncFloat("next_episode_threshold_minutes_before_end")?.let { PlayerSettingsStorage.saveNextEpisodeThresholdMinutesBeforeEnd(it) }
         payload.decodeSyncBoolean("preload_next_episode_sources")?.let { PlayerSettingsStorage.savePreloadNextEpisodeSources(it) }
+        payload.decodeSyncBoolean("prebuffer_next_episode_enabled")?.let { PlayerSettingsStorage.savePrebufferNextEpisodeEnabled(it) }
         payload.decodeSyncFloat("prepare_next_episode_percent")?.let { PlayerSettingsStorage.savePrepareNextEpisodePercent(it) }
         payload.decodeSyncBoolean("prepare_next_episode_enabled")?.let { PlayerSettingsStorage.savePrepareNextEpisodeEnabled(it) }
         payload.decodeSyncBoolean("mini_player_enabled")?.let { PlayerSettingsStorage.saveMiniPlayerEnabled(it) }

@@ -69,6 +69,9 @@ public final class NuvioAetherPlayer {
     }
 
     private var wantsPlay = false
+    /// False for a next-episode prepare: the load settles paused rather than letting the engine's
+    /// terminal play() start it (and its audio) before the pause lands.
+    private var autoplayOnLoad = true
     private var isLoadInFlight = false
     private var isLoaded = false
     private var hasRenderedFirstFrame = false
@@ -245,13 +248,20 @@ public final class NuvioAetherPlayer {
 
     /// Loads a new stream. `externalSubtitles` are listed as tracks without being selected, like
     /// mpv's `sub-add auto`.
-    public func load(url: URL, headers: [String: String], externalSubtitles: [NuvioAetherExternalSubtitle] = []) {
+    public func load(
+        url: URL,
+        headers: [String: String],
+        externalSubtitles: [NuvioAetherExternalSubtitle] = [],
+        startPositionSeconds: Double? = nil,
+        autoplay: Bool = true
+    ) {
         lastURL = url
         lastHeaders = headers
         declaredExternalSubtitles = externalSubtitles
         addedExternalSubtitles = []
         pendingSubtitleSelection = nil
-        startLoad(startPositionSeconds: nil)
+        autoplayOnLoad = autoplay
+        startLoad(startPositionSeconds: startPositionSeconds)
     }
 
     /// Reloads the current stream (AetherEngine sessions do not survive retry or the end of playback),
@@ -276,6 +286,7 @@ public final class NuvioAetherPlayer {
         hasReportedLoadFailure = false
 
         var options = LoadOptions()
+        options.autoplay = autoplayOnLoad || wantsPlay
         options.httpHeaders = headers
         // Decode-confirm E-AC-3 JOC so isAtmos is accurate rather than a container guess.
         options.confirmAtmos = true

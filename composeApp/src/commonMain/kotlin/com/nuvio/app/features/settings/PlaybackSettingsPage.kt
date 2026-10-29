@@ -1604,6 +1604,14 @@ private fun PlaybackSettingsSection(
                         )
                     }
                     SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_prebuffer_next_episode),
+                        description = stringResource(Res.string.settings_playback_prebuffer_next_episode_description),
+                        checked = autoPlayPlayerSettings.prebufferNextEpisodeEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setPrebufferNextEpisodeEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
                 }
                 var showThresholdModeDialog by remember { mutableStateOf(false) }
                 SettingsNavigationRow(

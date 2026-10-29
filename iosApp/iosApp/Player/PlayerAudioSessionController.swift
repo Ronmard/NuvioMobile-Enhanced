@@ -48,6 +48,17 @@ final class PlayerAudioSessionController: NSObject, CXCallObserverDelegate {
         }
     }
 
+    /// Stops observing without deactivating the shared session, for an engine handing playback to
+    /// another one (which activates the session itself).
+    func releaseWithoutDeactivating() {
+        isActive = false
+        callObserver.setDelegate(nil, queue: nil)
+        if let interruptionObserver {
+            NotificationCenter.default.removeObserver(interruptionObserver)
+            self.interruptionObserver = nil
+        }
+    }
+
     func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
         guard isActive else { return }
         // Include ringing, outgoing and held calls, and keep mixing until the last call ends.

@@ -5,6 +5,10 @@ import androidx.compose.ui.Modifier
 
 interface PlayerEngineController {
     val playbackEngine: AndroidPlaybackEngine? get() = null
+
+    /** Opens [source] paused in the background so the next episode can start without a load. */
+    fun prepareNextSource(source: PreparedPlayerSource): Boolean = false
+    fun discardPreparedNextSource() {}
     fun play()
     fun pause()
     fun seekTo(positionMs: Long)

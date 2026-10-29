@@ -5,8 +5,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.nuvio.app.features.debrid.DirectDebridPlayableResult
 import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
+import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamSubtitle
 import com.nuvio.app.features.watching.domain.isShortPlaceholderDuration
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -34,6 +36,9 @@ internal class PreparedNextEpisode(
 ) {
     private val preparedAt = TimeSource.Monotonic.markNow()
 
+    /** The player engine holds [stream] open and paused (pre-buffered) for the transition. */
+    var prebuffered = false
+
     /** The prepared stream, re-resolved when its link may have expired; null when that fails. */
     suspend fun playableStream(): StreamItem? {
         if (preparedAt.elapsedNow() < PREPARED_STREAM_MAX_AGE) return stream
@@ -47,6 +52,15 @@ internal class PreparedNextEpisode(
         }
     }
 }
+
+/** A source for [PlayerEngineController.prepareNextSource], as the next surface will load it. */
+data class PreparedPlayerSource(
+    val url: String,
+    val audioUrl: String?,
+    val headers: Map<String, String>,
+    val externalSubtitles: List<StreamSubtitle>,
+    val startPositionMs: Long,
+)
 
 /**
  * Prepare-next-episode bookkeeping for one player screen: which episode it tracks, the previous
@@ -162,21 +176,70 @@ private fun PlayerScreenRuntime.startNextEpisodePrepare(cause: String) {
     state.job = scope.launch {
         when (val result = searchNextEpisodeStream(nextVideo, type, settings, bingeGroup, background = true)) {
             is NextEpisodeSearchResult.Selected -> {
-                state.prepared = PreparedNextEpisode(
+                val prepared = PreparedNextEpisode(
                     videoId = nextVideo.id,
                     season = nextVideo.season,
                     episode = nextVideo.episode,
                     stream = result.stream,
                     sourceStream = result.sourceStream,
                 )
+                state.prepared = prepared
                 NextEpisodeDiagnostics.log {
                     "prepared next=${nextVideo.id} source=${result.stream.name ?: result.stream.addonName}"
                 }
+                prebufferNextEpisode(prepared, nextVideo)
             }
             is NextEpisodeSearchResult.NoSelection ->
                 NextEpisodeDiagnostics.log { "prepare found no auto-select stream: ${result.reason}" }
         }
     }
+}
+
+/**
+ * Opens the prepared stream paused on a second engine, so it buffers while this episode plays. Only
+ * for a plain direct URL: server, P2P, YouTube and external sources, and HLS (whose playback URL
+ * the quality inspection picks later), keep today's load at the transition.
+ */
+private fun PlayerScreenRuntime.prebufferNextEpisode(prepared: PreparedNextEpisode, nextVideo: MetaVideo) {
+    if (!playerSettingsUiState.prebufferNextEpisodeEnabled) return
+    val stream = prepared.stream
+    val url = stream.playableDirectUrl
+    val skipReason = when {
+        url == null -> "no direct URL"
+        isP2pStream(stream) -> "P2P stream"
+        stream.serverTarget != null -> "server stream"
+        stream.youTubeIdToResolve != null -> "YouTube stream"
+        stream.shouldOpenExternally -> "opens externally"
+        url.contains(".m3u8", ignoreCase = true) -> "HLS stream"
+        else -> null
+    }
+    val controller = playerController
+    if (skipReason != null || url == null || controller == null) {
+        NextEpisodeDiagnostics.log { "pre-buffer skipped: ${skipReason ?: "no player"}" }
+        return
+    }
+    val resume = resolveEpisodeResume(nextVideo.id, nextVideo)
+    prepared.prebuffered = controller.prepareNextSource(
+        PreparedPlayerSource(
+            url = url,
+            audioUrl = null,
+            headers = sanitizePlaybackHeaders(stream.behaviorHints.proxyHeaders?.request),
+            externalSubtitles = stream.externalSubtitles,
+            startPositionMs = resume.positionMs,
+        ),
+    )
+    NextEpisodeDiagnostics.log {
+        if (prepared.prebuffered) "pre-buffer started startMs=${resume.positionMs}"
+        else "pre-buffer skipped: this engine does not prepare"
+    }
+}
+
+/** Closes a pre-buffered stream that the transition did not use. */
+internal fun PlayerScreenRuntime.releasePreparedNextEpisode(prepared: PreparedNextEpisode) {
+    if (!prepared.prebuffered) return
+    prepared.prebuffered = false
+    NextEpisodeDiagnostics.log { "pre-buffered stream released: not used by the transition" }
+    playerController?.discardPreparedNextSource()
 }
 
 /** Hands over the prepared stream for [nextVideoId], if one is ready; any other preparation is dropped. */
@@ -202,6 +265,7 @@ internal fun PlayerScreenRuntime.discardPreparedNextEpisode(reason: String, rear
     }
     state.job?.cancel()
     state.job = null
+    state.prepared?.takeIf { it.prebuffered }?.let { playerController?.discardPreparedNextSource() }
     state.prepared = null
     if (rearm) state.fired = false
 }

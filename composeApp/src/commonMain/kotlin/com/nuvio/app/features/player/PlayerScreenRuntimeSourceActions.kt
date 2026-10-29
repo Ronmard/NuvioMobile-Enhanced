@@ -615,6 +615,7 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
     scope.launchPlayerNextEpisodeAutoPlay(
         previousJob = nextEpisodeAutoPlayJob,
         prepared = prepared,
+        onPreparedUnused = { releasePreparedNextEpisode(it) },
         nextEpisodeInfo = nextEpisodeInfo,
         allEpisodes = playerMetaVideos,
         parentMetaId = parentMetaId,
@@ -696,7 +697,7 @@ internal fun PlayerScreenRuntime.openEpisodesPanel() {
     controlsVisible = false
 }
 
-private data class EpisodeResume(val positionMs: Long, val fraction: Float?)
+internal data class EpisodeResume(val positionMs: Long, val fraction: Float?)
 
 private fun PlayerScreenRuntime.resetEpisodePanelAndNextEpisodeState() {
     showNextEpisodeCard = false
@@ -727,7 +728,7 @@ private fun PlayerScreenRuntime.episodeProgress(epVideoId: String, episode: Meta
 private suspend fun PlayerScreenRuntime.newerServerResumeMs(stream: StreamItem, episode: MetaVideo): Long? =
     ServerPlayback.newerResumePositionMs(stream.playableDirectUrl, episodeProgress(episode.id, episode)?.lastUpdatedEpochMs)
 
-private fun PlayerScreenRuntime.resolveEpisodeResume(epVideoId: String, episode: MetaVideo): EpisodeResume {
+internal fun PlayerScreenRuntime.resolveEpisodeResume(epVideoId: String, episode: MetaVideo): EpisodeResume {
     val epEntry = episodeProgress(epVideoId, episode)?.takeIf { !it.isCompleted }
     val epResumeFraction = epEntry?.progressPercent
         ?.takeIf { it > 0f }
