@@ -45,9 +45,23 @@ public final class NuvioAetherPlayer {
     private var loadTask: Task<Void, Never>?
     private var lastURL: URL?
     private var lastHeaders: [String: String] = [:]
-    private var lastExternalSubtitles: [NuvioAetherExternalSubtitle] = []
+    /// External subtitles that came with the stream.
+    private var declaredExternalSubtitles: [NuvioAetherExternalSubtitle] = []
+    /// External subtitles added mid-session (addon picks); declared again on an internal reload.
+    private var addedExternalSubtitles: [NuvioAetherExternalSubtitle] = []
+    /// Engine track id of each registered external subtitle in the current session.
+    private var externalSubtitleIds: [Int: NuvioAetherExternalSubtitle] = [:]
     /// External subtitles requested before the current load finished; registered once it has.
     private var pendingExternalSubtitles: [(subtitle: NuvioAetherExternalSubtitle, select: Bool)] = []
+    /// Subtitle selection to apply once the current load finishes: one made while loading, or the one
+    /// an internal reload (retry, replay) carries over.
+    private var pendingSubtitleSelection: SubtitleSelection?
+
+    private enum SubtitleSelection {
+        case off
+        case embedded(Int)
+        case external(NuvioAetherExternalSubtitle)
+    }
 
     private var wantsPlay = false
     private var isLoadInFlight = false
@@ -130,13 +144,16 @@ public final class NuvioAetherPlayer {
                     NuvioAetherTrack(
                         index: offset,
                         id: track.id,
-                        title: Self.trackTitle(
-                            name: track.name,
-                            language: track.language,
-                            codec: track.codec,
-                            channels: 0,
-                            isAtmos: false,
-                            fallback: "Subtitle \(offset + 1)"
+                        title: Self.subtitleTitle(
+                            Self.trackTitle(
+                                name: track.name,
+                                language: track.language,
+                                codec: track.codec,
+                                channels: 0,
+                                isAtmos: false,
+                                fallback: "Subtitle \(offset + 1)"
+                            ),
+                            isForced: track.isForced
                         ),
                         language: track.language ?? "",
                         selected: track.id == activeId
@@ -159,17 +176,33 @@ public final class NuvioAetherPlayer {
 
     // MARK: - Loading
 
-    /// `externalSubtitles` are listed as tracks without being selected, like mpv's `sub-add auto`.
-    public func load(
-        url: URL,
-        headers: [String: String],
-        externalSubtitles: [NuvioAetherExternalSubtitle] = [],
-        startPositionSeconds: Double? = nil
-    ) {
-        loadTask?.cancel()
+    /// Loads a new stream. `externalSubtitles` are listed as tracks without being selected, like
+    /// mpv's `sub-add auto`.
+    public func load(url: URL, headers: [String: String], externalSubtitles: [NuvioAetherExternalSubtitle] = []) {
         lastURL = url
         lastHeaders = headers
-        lastExternalSubtitles = externalSubtitles
+        declaredExternalSubtitles = externalSubtitles
+        addedExternalSubtitles = []
+        pendingSubtitleSelection = nil
+        startLoad(startPositionSeconds: nil)
+    }
+
+    /// Reloads the current stream (AetherEngine sessions do not survive retry or the end of playback),
+    /// keeping addon subtitles and the subtitle selection, as mpv re-applies them on reload.
+    private func reload(startPositionSeconds: Double?) {
+        guard lastURL != nil else { return }
+        if pendingSubtitleSelection == nil {
+            pendingSubtitleSelection = currentSubtitleSelection()
+        }
+        startLoad(startPositionSeconds: startPositionSeconds)
+    }
+
+    private func startLoad(startPositionSeconds: Double?) {
+        guard let url = lastURL else { return }
+        let headers = lastHeaders
+        loadTask?.cancel()
+        let externalSubtitles = declaredExternalSubtitles + addedExternalSubtitles
+        externalSubtitleIds = [:]
         errorMessage = ""
         isLoaded = false
         hasRenderedFirstFrame = false
@@ -201,6 +234,10 @@ public final class NuvioAetherPlayer {
                     self.pendingSeekSeconds = nil
                     await engine.seek(to: target)
                 }
+                self.externalSubtitleIds = Dictionary(uniqueKeysWithValues: externalSubtitles.enumerated().map {
+                    (AetherEngine.externalSubtitleTrackIDBase + $0.offset, $0.element)
+                })
+                self.applyPendingSubtitleSelection()
                 self.registerPendingExternalSubtitles()
                 if self.wantsPlay { engine.play() } else { engine.pause() }
             } catch is CancellationError {
@@ -223,14 +260,8 @@ public final class NuvioAetherPlayer {
     }
 
     public func retry() {
-        guard let lastURL else { return }
         let position = engine.clock.currentTime
-        load(
-            url: lastURL,
-            headers: lastHeaders,
-            externalSubtitles: lastExternalSubtitles,
-            startPositionSeconds: position > 0 ? position : nil
-        )
+        reload(startPositionSeconds: position > 0 ? position : nil)
     }
 
     public func destroy() {
@@ -248,9 +279,9 @@ public final class NuvioAetherPlayer {
     public func play() {
         wantsPlay = true
         guard isLoaded else { return }
-        if isEnded, let lastURL {
+        if isEnded {
             // .ended is terminal on AetherEngine; replay is a fresh load.
-            load(url: lastURL, headers: lastHeaders, externalSubtitles: lastExternalSubtitles, startPositionSeconds: 0)
+            reload(startPositionSeconds: 0)
             return
         }
         engine.play()
@@ -268,8 +299,8 @@ public final class NuvioAetherPlayer {
             pendingSeekSeconds = target
             return
         }
-        if isEnded, let lastURL {
-            load(url: lastURL, headers: lastHeaders, externalSubtitles: lastExternalSubtitles, startPositionSeconds: target)
+        if isEnded {
+            reload(startPositionSeconds: target)
             return
         }
         let engine = self.engine
@@ -319,12 +350,44 @@ public final class NuvioAetherPlayer {
 
     /// Selects a subtitle track by `NuvioAetherTrack.id`; a negative id turns subtitles off.
     public func selectSubtitleTrack(id: Int) {
-        guard isLoaded else { return }
-        if id >= 0 {
-            engine.selectSubtitleTrack(index: id)
+        let selection: SubtitleSelection
+        if id < 0 {
+            selection = .off
+        } else if let external = externalSubtitleIds[id] {
+            selection = .external(external)
         } else {
-            engine.clearSubtitle()
+            selection = .embedded(id)
         }
+        guard isLoaded else {
+            pendingSubtitleSelection = selection
+            return
+        }
+        apply(selection)
+    }
+
+    private func apply(_ selection: SubtitleSelection) {
+        switch selection {
+        case .off:
+            engine.clearSubtitle()
+        case .embedded(let id):
+            guard engine.subtitleTracks.contains(where: { $0.id == id }) else { return }
+            engine.selectSubtitleTrack(index: id)
+        case .external(let subtitle):
+            guard let id = externalSubtitleIds.first(where: { $0.value == subtitle })?.key else { return }
+            engine.selectSubtitleTrack(index: id)
+        }
+    }
+
+    private func applyPendingSubtitleSelection() {
+        guard let selection = pendingSubtitleSelection else { return }
+        pendingSubtitleSelection = nil
+        apply(selection)
+    }
+
+    private func currentSubtitleSelection() -> SubtitleSelection {
+        guard let id = engine.activeSubtitleTrackIndex else { return .off }
+        if let external = externalSubtitleIds[id] { return .external(external) }
+        return .embedded(id)
     }
 
     /// Loads an external subtitle file as a track, optionally selecting it (like mpv's `sub-add select`).
@@ -334,6 +397,8 @@ public final class NuvioAetherPlayer {
             return
         }
         let track = engine.addExternalSubtitleTrack(subtitle.engineTrack)
+        addedExternalSubtitles.append(subtitle)
+        externalSubtitleIds[track.id] = subtitle
         if select { engine.selectSubtitleTrack(index: track.id) }
     }
 
@@ -341,9 +406,14 @@ public final class NuvioAetherPlayer {
     /// selects the embedded track `selectId`, or turns subtitles off when it is negative.
     public func removeExternalSubtitles(thenSelect selectId: Int) {
         pendingExternalSubtitles.removeAll()
-        guard isLoaded else { return }
+        addedExternalSubtitles.removeAll()
+        guard isLoaded else {
+            selectSubtitleTrack(id: selectId)
+            return
+        }
         for track in engine.subtitleTracks where track.isExternal {
             engine.removeExternalSubtitleTrack(id: track.id)
+            externalSubtitleIds[track.id] = nil
         }
         selectSubtitleTrack(id: selectId)
     }
@@ -428,6 +498,12 @@ public final class NuvioAetherPlayer {
             "videoBitrateKbps": Int(engine.sourceVideoBitrate / 1000),
             "audioBitrateKbps": Int((activeAudio?.bitrate ?? 0) / 1000),
         ]
+    }
+
+    /// The Nuvio player recognises forced tracks by their label, so surface the container flag there.
+    private static func subtitleTitle(_ title: String, isForced: Bool) -> String {
+        guard isForced, !title.localizedCaseInsensitiveContains("forced") else { return title }
+        return "\(title) [Forced]"
     }
 
     private static func trackTitle(
