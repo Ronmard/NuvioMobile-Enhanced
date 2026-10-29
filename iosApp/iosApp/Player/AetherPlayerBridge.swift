@@ -8,7 +8,8 @@ import ComposeApp
 /// AetherEngine-backed implementation of the Kotlin player bridge.
 ///
 /// Covers load, transport, position/duration, audio/subtitle track lists and selection,
-/// text subtitles (drawn by `AetherSubtitleOverlayView`), playback state and errors. mpv-specific
+/// text subtitles (drawn by `AetherSubtitleOverlayView`), styled ASS (libass, `AetherStyledSubtitleView`),
+/// playback state and errors. mpv-specific
 /// calls (video output tuning, raw property reads) and features not wired to AetherEngine yet
 /// (PiP, Now Playing) are safe no-ops.
 final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
@@ -280,6 +281,9 @@ final class AetherPlayerViewController: UIViewController {
     private var keyboardShortcutHandler: ((String) -> Void)?
     private var initErrorMessage = ""
     private let subtitleOverlay = AetherSubtitleOverlayView()
+    private let styledSubtitles = AetherStyledSubtitleView()
+    /// Every cue of the selected track; the overlay gets those the styled layer does not draw.
+    private var subtitleCues: [NuvioAetherSubtitleCue] = []
     private var requestHeaders: [String: String] = [:]
     /// Bumped by every load and external-subtitle change, so a slow addon download that finishes
     /// after the user moved on is dropped instead of selected.
@@ -307,6 +311,7 @@ final class AetherPlayerViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         subtitleOverlay.style.fontFamily = subtitleFontFamily
+        styledSubtitles.defaultFontFamily = subtitleFontFamily
         _ = ensurePlayer()
     }
 
@@ -404,6 +409,7 @@ final class AetherPlayerViewController: UIViewController {
         if hasLoaded { externalSubtitleGeneration += 1 }
         hasLoaded = true
         subtitleOverlay.reset()
+        styledSubtitles.reset()
         player.load(url: url, headers: request.headers, externalSubtitles: request.subtitles)
     }
 
@@ -421,6 +427,10 @@ final class AetherPlayerViewController: UIViewController {
     func destroyPlayer() {
         subtitleOverlay.clock = nil
         subtitleOverlay.reset()
+        styledSubtitles.clock = nil
+        styledSubtitles.videoGeometry = nil
+        styledSubtitles.setASSSource(nil, fonts: [])
+        styledSubtitles.reset()
         player?.destroy()
         player?.view.removeFromSuperview()
         player = nil
@@ -437,21 +447,24 @@ final class AetherPlayerViewController: UIViewController {
     func getVolume() -> Float { player?.volume ?? 1.0 }
     func setVolume(_ volume: Float) { player?.setVolume(volume) }
     func setMuted(_ muted: Bool) { player?.setMuted(muted) }
-    func setResize(_ mode: Int) { player?.setResizeMode(mode) }
+    func setResize(_ mode: Int) {
+        player?.setResizeMode(mode)
+        styledSubtitles.resizeMode = mode
+    }
 
     func setVideoZoom(_ scale: Double) {
         let clamped = CGFloat(max(scale, 1.0))
         player?.view.transform = CGAffineTransform(scaleX: clamped, y: clamped)
+        // Authored subtitles belong to the picture, so they zoom with it; the plain-text overlay does not.
+        styledSubtitles.videoZoom = clamped
     }
 
     // MARK: - Subtitles
 
-    /// The overlay sits above the video surface (and outside its zoom transform), below Compose's controls.
+    /// The overlays sit above the video surface (and outside its zoom transform), below Compose's
+    /// controls: styled ASS first, the plain-text overlay over it.
     private func attachSubtitleOverlay(to player: NuvioAetherPlayer) {
-        subtitleOverlay.frame = view.bounds
-        subtitleOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(subtitleOverlay)
-        subtitleOverlay.clock = { [weak player] in
+        let clock: () -> AetherSubtitleOverlayView.Clock? = { [weak player] in
             guard let player else { return nil }
             return AetherSubtitleOverlayView.Clock(
                 seconds: player.subtitleClockSeconds,
@@ -459,9 +472,38 @@ final class AetherPlayerViewController: UIViewController {
                 rate: Double(player.speed)
             )
         }
-        player.onSubtitleCuesChanged = { [weak self] cues in
-            self?.subtitleOverlay.cues = cues
+        for overlay in [styledSubtitles, subtitleOverlay] as [UIView] {
+            overlay.frame = view.bounds
+            overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.addSubview(overlay)
         }
+        subtitleOverlay.clock = clock
+        styledSubtitles.clock = clock
+        styledSubtitles.videoGeometry = { [weak player] in
+            guard let player, let displaySize = player.videoDisplaySize else { return nil }
+            return AetherStyledSubtitleView.VideoGeometry(
+                displaySize: displaySize,
+                codedSize: CGSize(width: player.videoWidth, height: player.videoHeight)
+            )
+        }
+        player.onSubtitleCuesChanged = { [weak self] cues in
+            guard let self else { return }
+            self.subtitleCues = cues
+            self.styledSubtitles.cues = cues
+            self.updateTextOverlayCues()
+        }
+        player.onSubtitleASSSourceChanged = { [weak self, weak player] source in
+            guard let self, let player else { return }
+            self.styledSubtitles.setASSSource(source, fonts: player.fontAttachments)
+            self.updateTextOverlayCues()
+        }
+    }
+
+    /// Cues with raw ASS events are libass's while it runs; otherwise the overlay draws their plain text.
+    private func updateTextOverlayCues() {
+        subtitleOverlay.cues = styledSubtitles.isRenderingASS
+            ? subtitleCues.filter { $0.assEvents == nil }
+            : subtitleCues
     }
 
     // MARK: - Tracks
@@ -489,7 +531,9 @@ final class AetherPlayerViewController: UIViewController {
     }
 
     func setSubtitleDelayMs(_ delayMs: Int) {
-        subtitleOverlay.delaySeconds = Double(max(-60_000, min(60_000, delayMs))) / 1000.0
+        let delay = Double(max(-60_000, min(60_000, delayMs))) / 1000.0
+        subtitleOverlay.delaySeconds = delay
+        styledSubtitles.delaySeconds = delay
     }
 
     /// Empty path = the default face (the bundled Noto Sans mpv uses, else the system font).
@@ -497,8 +541,10 @@ final class AetherPlayerViewController: UIViewController {
         let family = path.isEmpty ? nil : MPVSubtitleFontResolver.registerCustomFont(atPath: path)
         subtitleFontFamily = family ?? Self.defaultSubtitleFontFamily
         subtitleOverlay.style.fontFamily = subtitleFontFamily
+        styledSubtitles.defaultFontFamily = subtitleFontFamily
     }
 
+    /// Styles the plain-text overlay only: like mpv (`sub-ass-override=no`), styled ASS keeps its own.
     func applySubtitleStyle(_ makeStyle: (_ fontFamily: String?) -> AetherSubtitleStyle) {
         subtitleOverlay.style = makeStyle(subtitleFontFamily)
     }

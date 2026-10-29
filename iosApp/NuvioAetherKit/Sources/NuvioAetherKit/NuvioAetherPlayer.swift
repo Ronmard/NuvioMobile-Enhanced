@@ -39,6 +39,11 @@ public final class NuvioAetherPlayer {
     /// Called on the main thread whenever `subtitleCues` changes.
     public var onSubtitleCuesChanged: (([NuvioAetherSubtitleCue]) -> Void)?
 
+    /// Set while the selected track is styled ASS/SSA whose cues carry raw events (`assEvents`).
+    public private(set) var subtitleASSSource: NuvioAetherASSSource?
+    /// Called on the main thread whenever `subtitleASSSource` changes.
+    public var onSubtitleASSSourceChanged: ((NuvioAetherASSSource?) -> Void)?
+
     private let engine: AetherEngine
     private let surface: AetherPlayerView
     private var cancellables = Set<AnyCancellable>()
@@ -172,6 +177,25 @@ public final class NuvioAetherPlayer {
                 self.onSubtitleCuesChanged?(mapped)
             }
             .store(in: &cancellables)
+
+        Publishers.CombineLatest3(engine.$activeSubtitleTrackIndex, engine.$subtitleTracks, engine.$sidecarASSHeader)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] activeId, tracks, sidecarHeader in
+                guard let self else { return }
+                let source = activeId.flatMap { id -> NuvioAetherASSSource? in
+                    guard let track = tracks.first(where: { $0.id == id }) else { return nil }
+                    // An external file's header comes from its sidecar decode, an embedded track's from
+                    // the container; either is only set when the cues carry raw ASS events.
+                    let header = (track.isExternal ? sidecarHeader : track.assHeader)?
+                        .replacingOccurrences(of: "\0", with: "")
+                    guard let header, !header.isEmpty else { return nil }
+                    return NuvioAetherASSSource(trackId: id, header: header)
+                }
+                guard source != self.subtitleASSSource else { return }
+                self.subtitleASSSource = source
+                self.onSubtitleASSSourceChanged?(source)
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Loading
@@ -216,6 +240,9 @@ public final class NuvioAetherPlayer {
         // Subtitle auto-selection stays with the Nuvio player (it picks from the track list itself),
         // so preferredSubtitleLanguages is deliberately left empty.
         options.externalSubtitles = externalSubtitles.map(\.engineTrack)
+        // ASS/SSA cues keep their raw events (and tracks their header) for the host's libass renderer;
+        // other formats are unaffected.
+        options.preserveASSMarkup = true
 
         let startPosition = startPositionSeconds ?? pendingSeekSeconds
         pendingSeekSeconds = nil
@@ -267,6 +294,7 @@ public final class NuvioAetherPlayer {
     public func destroy() {
         onLoadFailed = nil
         onSubtitleCuesChanged = nil
+        onSubtitleASSSourceChanged = nil
         loadTask?.cancel()
         loadTask = nil
         cancellables.removeAll()
@@ -458,6 +486,22 @@ public final class NuvioAetherPlayer {
     public var speed: Float { requestedSpeed }
     public var videoWidth: Int { Int(engine.sourceVideoWidth) }
     public var videoHeight: Int { Int(engine.sourceVideoHeight) }
+
+    /// Shape of the picture as presented (coded size under the pixel aspect), nil before it is known.
+    /// Subtitle layers fit this into the view the same way the video gravity does.
+    public var videoDisplaySize: CGSize? {
+        if let size = engine.softwareDisplaySize, size.width > 0, size.height > 0 { return size }
+        let width = Double(engine.sourceVideoWidth)
+        let height = Double(engine.sourceVideoHeight)
+        guard width > 0, height > 0 else { return nil }
+        return CGSize(width: width * engine.sourceVideoPixelAspectRatio, height: height)
+    }
+
+    /// Fonts attached to the current media, for ASS styles that name them. Read once per load: the
+    /// payloads can be tens of MB.
+    public var fontAttachments: [NuvioAetherFontAttachment] {
+        engine.fontAttachments.map { NuvioAetherFontAttachment(name: $0.filename, data: $0.data) }
+    }
 
     /// Same keys as the mpv bridge's media info, so the player's Info panel can show them.
     public func mediaInfo() -> [String: Any]? {

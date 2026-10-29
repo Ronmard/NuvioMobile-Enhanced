@@ -36,8 +36,6 @@ final class AetherSubtitleOverlayView: UIView {
     /// mpv's default `sub-margin-y` / `sub-margin-x`, in 720p-scaled pixels.
     private static let verticalMargin: CGFloat = 22
     private static let horizontalMargin: CGFloat = 25
-    /// Never extrapolate further than this past the last clock tick (a stalled clock must not run on).
-    private static let maxExtrapolationSeconds: Double = 0.25
 
     var clock: (() -> Clock?)?
 
@@ -64,8 +62,7 @@ final class AetherSubtitleOverlayView: UIView {
     private var bottomText = ""
     private var topText = ""
     private var displayLink: CADisplayLink?
-    private var anchorClockSeconds: Double = .nan
-    private var anchorHostTime: CFTimeInterval = 0
+    private var clockInterpolator = AetherSubtitleClockInterpolator()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -86,7 +83,7 @@ final class AetherSubtitleOverlayView: UIView {
 
     func reset() {
         cues = []
-        anchorClockSeconds = .nan
+        clockInterpolator.reset()
     }
 
     // MARK: - Timing
@@ -110,14 +107,7 @@ final class AetherSubtitleOverlayView: UIView {
 
     private func currentTime() -> Double? {
         guard let clock = clock?() else { return nil }
-        let now = CACurrentMediaTime()
-        if clock.seconds != anchorClockSeconds {
-            anchorClockSeconds = clock.seconds
-            anchorHostTime = now
-        }
-        guard clock.isRunning else { return clock.seconds }
-        let elapsed = min(now - anchorHostTime, Self.maxExtrapolationSeconds)
-        return clock.seconds + elapsed * clock.rate
+        return clockInterpolator.time(for: clock)
     }
 
     private func refreshActiveCues(force: Bool = false) {
@@ -249,6 +239,31 @@ final class AetherSubtitleOverlayView: UIView {
         }
         let ratio = (font.ascender - font.descender) / 100
         return font.withSize(lineHeight / max(ratio, 0.5))
+    }
+}
+
+/// Turns the engine's ~10 Hz subtitle clock into a per-frame time: while playing, runs on from the
+/// last tick at the playback rate.
+struct AetherSubtitleClockInterpolator {
+    /// Never extrapolate further than this past the last clock tick (a stalled clock must not run on).
+    private static let maxExtrapolationSeconds: Double = 0.25
+
+    private var anchorClockSeconds: Double = .nan
+    private var anchorHostTime: CFTimeInterval = 0
+
+    mutating func time(for clock: AetherSubtitleOverlayView.Clock) -> Double {
+        let now = CACurrentMediaTime()
+        if clock.seconds != anchorClockSeconds {
+            anchorClockSeconds = clock.seconds
+            anchorHostTime = now
+        }
+        guard clock.isRunning else { return clock.seconds }
+        let elapsed = min(now - anchorHostTime, Self.maxExtrapolationSeconds)
+        return clock.seconds + elapsed * clock.rate
+    }
+
+    mutating func reset() {
+        anchorClockSeconds = .nan
     }
 }
 
