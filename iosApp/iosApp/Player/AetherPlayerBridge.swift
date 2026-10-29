@@ -190,8 +190,12 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
     func setSubtitleUrl(url: String) { ensurePlayerViewController().addSubtitleUrl(url) }
     func clearExternalSubtitle() { playerVC?.removeExternalSubtitles(thenSelect: -1) }
     func clearExternalSubtitleAndSelect(trackId: Int32) { playerVC?.removeExternalSubtitles(thenSelect: Int(trackId)) }
-    func setSubtitleDelayMs(delayMs: Int32) {}
-    func setSubtitleFontPath(path: String) {}
+    func setSubtitleDelayMs(delayMs: Int32) {
+        ensurePlayerViewController().setSubtitleDelayMs(Int(delayMs))
+    }
+    func setSubtitleFontPath(path: String) {
+        ensurePlayerViewController().setSubtitleFontPath(path)
+    }
     func applySubtitleStyle(
         textColor: String,
         backgroundColor: String,
@@ -202,7 +206,23 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
         fontSize: Float,
         subPos: Int32,
         stripSdh: Bool
-    ) {}
+    ) {
+        ensurePlayerViewController().applySubtitleStyle { fontFamily in
+            var style = AetherSubtitleStyle(
+                mpvTextColor: textColor,
+                backgroundColor: backgroundColor,
+                outlineColor: outlineColor,
+                outlineSize: outlineSize,
+                shadowOffset: shadowOffset,
+                bold: bold,
+                fontSize: fontSize,
+                subPos: subPos,
+                fontFamily: fontFamily
+            )
+            style.stripSdh = stripSdh
+            return style
+        }
+    }
 
     // State (polled from Kotlin every 250ms)
     func getIsLoading() -> Bool { playerVC?.isPlayerLoading ?? true }
@@ -265,6 +285,7 @@ final class AetherPlayerViewController: UIViewController {
     /// after the user moved on is dropped instead of selected.
     private var externalSubtitleGeneration = 0
     private var hasLoaded = false
+    private lazy var subtitleFontFamily: String? = Self.defaultSubtitleFontFamily
 
     var preferredAudioLanguages: [String] = [] {
         didSet { player?.preferredAudioLanguages = preferredAudioLanguages }
@@ -285,6 +306,7 @@ final class AetherPlayerViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        subtitleOverlay.style.fontFamily = subtitleFontFamily
         _ = ensurePlayer()
     }
 
@@ -464,6 +486,27 @@ final class AetherPlayerViewController: UIViewController {
                 )
             }
         }
+    }
+
+    func setSubtitleDelayMs(_ delayMs: Int) {
+        subtitleOverlay.delaySeconds = Double(max(-60_000, min(60_000, delayMs))) / 1000.0
+    }
+
+    /// Empty path = the default face (the bundled Noto Sans mpv uses, else the system font).
+    func setSubtitleFontPath(_ path: String) {
+        let family = path.isEmpty ? nil : MPVSubtitleFontResolver.registerCustomFont(atPath: path)
+        subtitleFontFamily = family ?? Self.defaultSubtitleFontFamily
+        subtitleOverlay.style.fontFamily = subtitleFontFamily
+    }
+
+    func applySubtitleStyle(_ makeStyle: (_ fontFamily: String?) -> AetherSubtitleStyle) {
+        subtitleOverlay.style = makeStyle(subtitleFontFamily)
+    }
+
+    private static var defaultSubtitleFontFamily: String? {
+        MPVSubtitleFontResolver.registerBundledFonts()
+        let family = MPVSubtitleFontResolver.defaultFamily
+        return family == "sans-serif" ? nil : family
     }
 
     func removeExternalSubtitles(thenSelect trackId: Int) {

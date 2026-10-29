@@ -17,6 +17,8 @@ struct AetherSubtitleStyle: Equatable {
     /// mpv `sub-pos`: 100 is the default bottom position, lower values move the text up.
     var subPos: CGFloat = 100
     var fontFamily: String?
+    /// Remove hearing-impaired annotations (mpv `sub-filter-sdh`).
+    var stripSdh = false
 }
 
 /// Draws the active text cues of the selected AetherEngine subtitle track over the video.
@@ -47,7 +49,16 @@ final class AetherSubtitleOverlayView: UIView {
     }
 
     var style = AetherSubtitleStyle() {
-        didSet { if style != oldValue { setNeedsDisplay() } }
+        didSet {
+            guard style != oldValue else { return }
+            if style.stripSdh != oldValue.stripSdh { refreshActiveCues(force: true) }
+            setNeedsDisplay()
+        }
+    }
+
+    /// mpv `sub-delay`: positive shows subtitles later.
+    var delaySeconds: Double = 0 {
+        didSet { if delaySeconds != oldValue { refreshActiveCues() } }
     }
 
     private var bottomText = ""
@@ -109,24 +120,27 @@ final class AetherSubtitleOverlayView: UIView {
         return clock.seconds + elapsed * clock.rate
     }
 
-    private func refreshActiveCues() {
+    private func refreshActiveCues(force: Bool = false) {
         var top: [String] = []
         var bottom: [String] = []
-        if !cues.isEmpty, let time = currentTime() {
+        if !cues.isEmpty, let playbackTime = currentTime() {
+            let time = playbackTime - delaySeconds
             let active = cues
                 .filter { $0.startSeconds <= time && time < $0.endSeconds }
                 .sorted { $0.startSeconds < $1.startSeconds }
             for cue in active {
+                let text = style.stripSdh ? AetherSubtitleSdhFilter.strip(cue.text) : cue.text
+                guard !text.isEmpty else { continue }
                 if let alignment = cue.alignment, (7...9).contains(alignment) {
-                    top.append(cue.text)
+                    top.append(text)
                 } else {
-                    bottom.append(cue.text)
+                    bottom.append(text)
                 }
             }
         }
         let newTop = top.joined(separator: "\n")
         let newBottom = bottom.joined(separator: "\n")
-        guard newTop != topText || newBottom != bottomText else { return }
+        guard force || newTop != topText || newBottom != bottomText else { return }
         topText = newTop
         bottomText = newBottom
         setNeedsDisplay()
