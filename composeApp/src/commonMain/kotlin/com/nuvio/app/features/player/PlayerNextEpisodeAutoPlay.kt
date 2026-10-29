@@ -96,6 +96,8 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     prepared: PreparedNextEpisode? = null,
     /** [cancelled]: the run stopped before switching, so the preparation is still good for a later run. */
     onPreparedUnused: (prepared: PreparedNextEpisode, cancelled: Boolean) -> Unit = { _, _ -> },
+    /** True while the run may wait past the auto-play timeout (addons still answering, episode not over). */
+    keepWaitingAfterTimeout: () -> Boolean = { false },
 ): Job? {
     val nextVideoId = nextEpisodeInfo?.videoId ?: return null
     val nextVideo = allEpisodes.firstOrNull { video -> video.id == nextVideoId } ?: return null
@@ -126,7 +128,11 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 NextEpisodeDiagnostics.log { "using prepared stream source=${preparedStream.name ?: preparedStream.addonName}" }
                 NextEpisodeSearchResult.Selected(stream = preparedStream, sourceStream = prepared?.sourceStream ?: preparedStream)
             } else {
-                searchNextEpisodeStream(nextVideo, type, settings, currentStreamBingeGroup, background = false)
+                searchNextEpisodeStream(
+                    nextVideo, type, settings, currentStreamBingeGroup,
+                    background = false,
+                    keepWaitingAfterTimeout = keepWaitingAfterTimeout,
+                )
             }
             onSearchingChanged(false)
             when (result) {
@@ -167,6 +173,9 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     }
 }
 
+/** How often a search waiting past its timeout re-checks whether it should keep waiting. */
+private const val KEEP_WAITING_POLL_MS = 250L
+
 internal sealed interface NextEpisodeSearchResult {
     /** [stream] is playable (debrid-resolved); [sourceStream] is what the selector picked, for re-resolving. */
     data class Selected(val stream: StreamItem, val sourceStream: StreamItem) : NextEpisodeSearchResult
@@ -184,6 +193,7 @@ internal suspend fun searchNextEpisodeStream(
     settings: PlayerSettingsUiState,
     currentStreamBingeGroup: String?,
     background: Boolean,
+    keepWaitingAfterTimeout: () -> Boolean = { false },
 ): NextEpisodeSearchResult = coroutineScope {
     // Mirrors StreamAutoPlayPolicy.isEffectivelyEnabled: a user whose initial-playback source
     // gets auto-picked via "reuse last link" (or a reused binge group) shouldn't be prompted to
@@ -372,6 +382,22 @@ internal suspend fun searchNextEpisodeStream(
                     if (candidate != null) {
                         selectStream(candidate, "at timeout")
                     }
+                }
+            }
+            if (!autoSelectTriggered && keepWaitingAfterTimeout()) {
+                // Addons still answering and the episode not over: wait for them instead of opening the
+                // picker. The collector above (now past the timeout) selects the first stream that passes
+                // the filters, or settles when every addon has answered; the wait ends early when the
+                // episode ends.
+                NextEpisodeDiagnostics.log { "timeout before the end: waiting for the remaining addons" }
+                withTimeoutOrNull(NEXT_EPISODE_HARD_TIMEOUT_MS) {
+                    while (!autoSelectSettled.isCompleted && keepWaitingAfterTimeout()) {
+                        withTimeoutOrNull(KEEP_WAITING_POLL_MS) { autoSelectSettled.await() }
+                    }
+                }
+                NextEpisodeDiagnostics.log {
+                    "wait ended: selected=${selectedStream != null} settled=${autoSelectSettled.isCompleted} " +
+                        "stillWaiting=${keepWaitingAfterTimeout()} ${NextEpisodeDiagnostics.describe(PlayerStreamsRepository.episodeStreamsState.value)}"
                 }
             }
         }

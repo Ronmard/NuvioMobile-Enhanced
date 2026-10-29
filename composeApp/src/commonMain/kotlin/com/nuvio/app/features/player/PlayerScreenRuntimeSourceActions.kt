@@ -616,6 +616,9 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
     scope.launchPlayerNextEpisodeAutoPlay(
         previousJob = nextEpisodeAutoPlayJob,
         prepared = prepared,
+        keepWaitingAfterTimeout = {
+            playbackKey == activePlaybackKey && !playbackSnapshot.isEnded
+        },
         onPreparedUnused = { unused, cancelled ->
             if (cancelled) restorePreparedNextEpisode(unused) else releasePreparedNextEpisode(unused)
         },

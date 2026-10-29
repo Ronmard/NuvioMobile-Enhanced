@@ -182,7 +182,12 @@ private fun PlayerScreenRuntime.startNextEpisodePrepare(cause: String) {
     val settings = playerSettingsUiState
     val bingeGroup = currentStreamBingeGroup
     state.job = scope.launch {
-        when (val result = searchNextEpisodeStream(nextVideo, type, settings, bingeGroup, background = true)) {
+        when (val result = searchNextEpisodeStream(
+            nextVideo, type, settings, bingeGroup,
+            background = true,
+            // In the background there is no picker to fall back to: wait for every addon.
+            keepWaitingAfterTimeout = { true },
+        )) {
             is NextEpisodeSearchResult.Selected -> {
                 val prepared = PreparedNextEpisode(
                     videoId = nextVideo.id,
