@@ -45,6 +45,9 @@ public final class NuvioAetherPlayer {
     private var loadTask: Task<Void, Never>?
     private var lastURL: URL?
     private var lastHeaders: [String: String] = [:]
+    private var lastExternalSubtitles: [NuvioAetherExternalSubtitle] = []
+    /// External subtitles requested before the current load finished; registered once it has.
+    private var pendingExternalSubtitles: [(subtitle: NuvioAetherExternalSubtitle, select: Bool)] = []
 
     private var wantsPlay = false
     private var isLoadInFlight = false
@@ -156,10 +159,17 @@ public final class NuvioAetherPlayer {
 
     // MARK: - Loading
 
-    public func load(url: URL, headers: [String: String], startPositionSeconds: Double? = nil) {
+    /// `externalSubtitles` are listed as tracks without being selected, like mpv's `sub-add auto`.
+    public func load(
+        url: URL,
+        headers: [String: String],
+        externalSubtitles: [NuvioAetherExternalSubtitle] = [],
+        startPositionSeconds: Double? = nil
+    ) {
         loadTask?.cancel()
         lastURL = url
         lastHeaders = headers
+        lastExternalSubtitles = externalSubtitles
         errorMessage = ""
         isLoaded = false
         hasRenderedFirstFrame = false
@@ -170,6 +180,9 @@ public final class NuvioAetherPlayer {
         // Decode-confirm E-AC-3 JOC so isAtmos is accurate rather than a container guess.
         options.confirmAtmos = true
         options.preferredAudioLanguages = preferredAudioLanguages
+        // Subtitle auto-selection stays with the Nuvio player (it picks from the track list itself),
+        // so preferredSubtitleLanguages is deliberately left empty.
+        options.externalSubtitles = externalSubtitles.map(\.engineTrack)
 
         let startPosition = startPositionSeconds ?? pendingSeekSeconds
         pendingSeekSeconds = nil
@@ -188,6 +201,7 @@ public final class NuvioAetherPlayer {
                     self.pendingSeekSeconds = nil
                     await engine.seek(to: target)
                 }
+                self.registerPendingExternalSubtitles()
                 if self.wantsPlay { engine.play() } else { engine.pause() }
             } catch is CancellationError {
                 // A newer load superseded this one; not a failure.
@@ -211,7 +225,12 @@ public final class NuvioAetherPlayer {
     public func retry() {
         guard let lastURL else { return }
         let position = engine.clock.currentTime
-        load(url: lastURL, headers: lastHeaders, startPositionSeconds: position > 0 ? position : nil)
+        load(
+            url: lastURL,
+            headers: lastHeaders,
+            externalSubtitles: lastExternalSubtitles,
+            startPositionSeconds: position > 0 ? position : nil
+        )
     }
 
     public func destroy() {
@@ -231,7 +250,7 @@ public final class NuvioAetherPlayer {
         guard isLoaded else { return }
         if isEnded, let lastURL {
             // .ended is terminal on AetherEngine; replay is a fresh load.
-            load(url: lastURL, headers: lastHeaders, startPositionSeconds: 0)
+            load(url: lastURL, headers: lastHeaders, externalSubtitles: lastExternalSubtitles, startPositionSeconds: 0)
             return
         }
         engine.play()
@@ -250,7 +269,7 @@ public final class NuvioAetherPlayer {
             return
         }
         if isEnded, let lastURL {
-            load(url: lastURL, headers: lastHeaders, startPositionSeconds: target)
+            load(url: lastURL, headers: lastHeaders, externalSubtitles: lastExternalSubtitles, startPositionSeconds: target)
             return
         }
         let engine = self.engine
@@ -305,6 +324,35 @@ public final class NuvioAetherPlayer {
             engine.selectSubtitleTrack(index: id)
         } else {
             engine.clearSubtitle()
+        }
+    }
+
+    /// Loads an external subtitle file as a track, optionally selecting it (like mpv's `sub-add select`).
+    public func addExternalSubtitle(_ subtitle: NuvioAetherExternalSubtitle, select: Bool) {
+        guard isLoaded else {
+            pendingExternalSubtitles.append((subtitle, select))
+            return
+        }
+        let track = engine.addExternalSubtitleTrack(subtitle.engineTrack)
+        if select { engine.selectSubtitleTrack(index: track.id) }
+    }
+
+    /// Removes every external subtitle track (like mpv's `sub-remove` over all external tracks), then
+    /// selects the embedded track `selectId`, or turns subtitles off when it is negative.
+    public func removeExternalSubtitles(thenSelect selectId: Int) {
+        pendingExternalSubtitles.removeAll()
+        guard isLoaded else { return }
+        for track in engine.subtitleTracks where track.isExternal {
+            engine.removeExternalSubtitleTrack(id: track.id)
+        }
+        selectSubtitleTrack(id: selectId)
+    }
+
+    private func registerPendingExternalSubtitles() {
+        let pending = pendingExternalSubtitles
+        pendingExternalSubtitles.removeAll()
+        for entry in pending {
+            addExternalSubtitle(entry.subtitle, select: entry.select)
         }
     }
 

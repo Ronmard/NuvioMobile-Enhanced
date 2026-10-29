@@ -58,8 +58,32 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
             vc.failLoad("AetherEngine does not support a separate audio stream")
             return
         }
-        // External subtitles are not rendered on the Aether path yet, so subtitlesJson is ignored.
-        vc.load(AetherLoadRequest(url: videoUrl, headers: parseRequestHeaders(headersJson)))
+        vc.load(AetherLoadRequest(
+            url: videoUrl,
+            headers: parseRequestHeaders(headersJson),
+            subtitles: parseSubtitles(subtitlesJson)
+        ))
+    }
+
+    /// Same JSON as the mpv bridge receives: [{url, language, name?, headers?}].
+    private func parseSubtitles(_ json: String?) -> [NuvioAetherExternalSubtitle] {
+        guard
+            let json,
+            let data = json.data(using: .utf8),
+            let raw = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        else {
+            return []
+        }
+        return raw.compactMap { dict in
+            guard let urlString = dict["url"] as? String, let url = URL(string: urlString) else { return nil }
+            let language = dict["language"] as? String
+            return NuvioAetherExternalSubtitle(
+                url: url,
+                name: (dict["name"] as? String) ?? language,
+                language: language,
+                headers: dict["headers"] as? [String: String]
+            )
+        }
     }
 
     func play() { playerVC?.playPlayback() }
@@ -163,9 +187,9 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
 
     func selectAudioTrack(trackId: Int32) { playerVC?.selectAudio(Int(trackId)) }
     func selectSubtitleTrack(trackId: Int32) { playerVC?.selectSubtitle(Int(trackId)) }
-    func setSubtitleUrl(url: String) {}
-    func clearExternalSubtitle() {}
-    func clearExternalSubtitleAndSelect(trackId: Int32) { playerVC?.selectSubtitle(Int(trackId)) }
+    func setSubtitleUrl(url: String) { ensurePlayerViewController().addSubtitleUrl(url) }
+    func clearExternalSubtitle() { playerVC?.removeExternalSubtitles(thenSelect: -1) }
+    func clearExternalSubtitleAndSelect(trackId: Int32) { playerVC?.removeExternalSubtitles(thenSelect: Int(trackId)) }
     func setSubtitleDelayMs(delayMs: Int32) {}
     func setSubtitleFontPath(path: String) {}
     func applySubtitleStyle(
@@ -217,6 +241,7 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
 struct AetherLoadRequest {
     let url: String
     let headers: [String: String]
+    let subtitles: [NuvioAetherExternalSubtitle]
 }
 
 // MARK: - Aether Player View Controller
@@ -235,6 +260,11 @@ final class AetherPlayerViewController: UIViewController {
     private var keyboardShortcutHandler: ((String) -> Void)?
     private var initErrorMessage = ""
     private let subtitleOverlay = AetherSubtitleOverlayView()
+    private var requestHeaders: [String: String] = [:]
+    /// Bumped by every load and external-subtitle change, so a slow addon download that finishes
+    /// after the user moved on is dropped instead of selected.
+    private var externalSubtitleGeneration = 0
+    private var hasLoaded = false
 
     var preferredAudioLanguages: [String] = [] {
         didSet { player?.preferredAudioLanguages = preferredAudioLanguages }
@@ -346,7 +376,13 @@ final class AetherPlayerViewController: UIViewController {
             return
         }
         audioSession.activate()
-        player.load(url: url, headers: request.headers)
+        requestHeaders = request.headers
+        // The engine router replays a remembered addon subtitle before the first load, so only a
+        // later load (a different stream) invalidates downloads still in flight.
+        if hasLoaded { externalSubtitleGeneration += 1 }
+        hasLoaded = true
+        subtitleOverlay.reset()
+        player.load(url: url, headers: request.headers, externalSubtitles: request.subtitles)
     }
 
     func failLoad(_ message: String) {
@@ -410,6 +446,30 @@ final class AetherPlayerViewController: UIViewController {
 
     func selectAudio(_ trackId: Int) { player?.selectAudioTrack(id: trackId) }
     func selectSubtitle(_ trackId: Int) { player?.selectSubtitleTrack(id: trackId) }
+
+    /// An addon subtitle the user picked: loaded as an external track and selected, like mpv's
+    /// `sub-add select`. Legacy-ordered Hebrew files get the same punctuation fix as on mpv, since
+    /// UIKit lays Hebrew out right-to-left just like libass.
+    func addSubtitleUrl(_ url: String) {
+        externalSubtitleGeneration += 1
+        let generation = externalSubtitleGeneration
+        MPVSubtitleRtlFix.prepare(url: url, headers: requestHeaders) { [weak self] localPath, title in
+            DispatchQueue.main.async {
+                guard let self, self.externalSubtitleGeneration == generation else { return }
+                let resolved = localPath.map { URL(fileURLWithPath: $0) } ?? URL(string: url)
+                guard let resolved else { return }
+                self.ensurePlayer()?.addExternalSubtitle(
+                    NuvioAetherExternalSubtitle(url: resolved, name: title, language: nil, headers: nil),
+                    select: true
+                )
+            }
+        }
+    }
+
+    func removeExternalSubtitles(thenSelect trackId: Int) {
+        externalSubtitleGeneration += 1
+        player?.removeExternalSubtitles(thenSelect: trackId)
+    }
 
     private static func trackInfo(_ track: NuvioAetherTrack, type: String) -> TrackInfo {
         TrackInfo(index: track.index, id: track.id, type: type, title: track.title, lang: track.language, selected: track.selected)

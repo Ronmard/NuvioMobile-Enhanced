@@ -28,3 +28,29 @@ extension NuvioAetherSubtitleCue {
         )
     }
 }
+
+/// A subtitle file outside the media (stream-provided or picked from an addon), loaded by the engine
+/// and listed next to the embedded tracks.
+public struct NuvioAetherExternalSubtitle: Equatable {
+    public let url: URL
+    public let name: String?
+    public let language: String?
+    /// nil sends the stream's own request headers.
+    public let headers: [String: String]?
+
+    public init(url: URL, name: String?, language: String?, headers: [String: String]?) {
+        self.url = url
+        self.name = name
+        self.language = language
+        self.headers = headers
+    }
+
+    var engineTrack: ExternalSubtitleTrack {
+        ExternalSubtitleTrack(
+            url: url,
+            name: name?.isEmpty == false ? name : nil,
+            language: language?.isEmpty == false ? language : nil,
+            httpHeaders: headers?.isEmpty == false ? headers : nil
+        )
+    }
+}
