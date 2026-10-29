@@ -26,7 +26,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal fun PlayerScreenRuntime.isAtNextEpisodeThreshold(): Boolean {
-    if (playbackSnapshotKey != activePlaybackKey || playbackSnapshot.isLoading ||
+    // Loading only blocks until the first load completes. After that it is a seek, rebuffer or stall
+    // (AetherEngine reports all three as loading), which must not hide the card or cancel a running
+    // auto-play; a seek back below the threshold still does, through the position.
+    if (playbackSnapshotKey != activePlaybackKey || (playbackSnapshot.isLoading && !initialLoadCompleted) ||
         !initialSeekApplied || isScrubbingTimeline || errorMessage != null ||
         isShortPlaceholderDuration(playbackSnapshot.durationMs)
     ) return false

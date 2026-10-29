@@ -42,7 +42,7 @@ internal object NextEpisodeDiagnostics {
 /** Why the threshold check failed, for cancellation logs. */
 internal fun PlayerScreenRuntime.nextEpisodeThresholdBlockers(): String = buildList {
     if (playbackSnapshotKey != activePlaybackKey) add("snapshotKeyMismatch")
-    if (playbackSnapshot.isLoading) add("isLoading")
+    if (playbackSnapshot.isLoading && !initialLoadCompleted) add("initialLoading")
     if (!initialSeekApplied) add("initialSeekPending")
     if (isScrubbingTimeline) add("scrubbing")
     if (errorMessage != null) add("error")
