@@ -34,6 +34,11 @@ public final class NuvioAetherPlayer {
     public private(set) var subtitleTracks: [NuvioAetherTrack] = []
     public private(set) var errorMessage = ""
 
+    /// Text cues of the selected subtitle track, for the host overlay. Bitmap cues are left out.
+    public private(set) var subtitleCues: [NuvioAetherSubtitleCue] = []
+    /// Called on the main thread whenever `subtitleCues` changes.
+    public var onSubtitleCuesChanged: (([NuvioAetherSubtitleCue]) -> Void)?
+
     private let engine: AetherEngine
     private let surface: AetherPlayerView
     private var cancellables = Set<AnyCancellable>()
@@ -50,8 +55,6 @@ public final class NuvioAetherPlayer {
     private var requestedSpeed: Float = 1.0
     private var requestedVolume: Float = 1.0
     private var isMuted = false
-    /// Subtitle selection is remembered for the picker only; cues are not rendered yet.
-    private var selectedSubtitleId: Int?
 
     public init() throws {
         engine = try AetherEngine()
@@ -117,11 +120,10 @@ public final class NuvioAetherPlayer {
             }
             .store(in: &cancellables)
 
-        engine.$subtitleTracks
+        Publishers.CombineLatest(engine.$subtitleTracks, engine.$activeSubtitleTrackIndex)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] tracks in
-                guard let self else { return }
-                self.subtitleTracks = tracks.enumerated().map { offset, track in
+            .sink { [weak self] tracks, activeId in
+                self?.subtitleTracks = tracks.enumerated().map { offset, track in
                     NuvioAetherTrack(
                         index: offset,
                         id: track.id,
@@ -134,9 +136,20 @@ public final class NuvioAetherPlayer {
                             fallback: "Subtitle \(offset + 1)"
                         ),
                         language: track.language ?? "",
-                        selected: track.id == self.selectedSubtitleId
+                        selected: track.id == activeId
                     )
                 }
+            }
+            .store(in: &cancellables)
+
+        engine.$subtitleCues
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] cues in
+                guard let self else { return }
+                let mapped = cues.compactMap(NuvioAetherSubtitleCue.make(from:))
+                guard mapped != self.subtitleCues else { return }
+                self.subtitleCues = mapped
+                self.onSubtitleCuesChanged?(mapped)
             }
             .store(in: &cancellables)
     }
@@ -151,7 +164,6 @@ public final class NuvioAetherPlayer {
         isLoaded = false
         hasRenderedFirstFrame = false
         hasReportedLoadFailure = false
-        selectedSubtitleId = nil
 
         var options = LoadOptions()
         options.httpHeaders = headers
@@ -204,6 +216,7 @@ public final class NuvioAetherPlayer {
 
     public func destroy() {
         onLoadFailed = nil
+        onSubtitleCuesChanged = nil
         loadTask?.cancel()
         loadTask = nil
         cancellables.removeAll()
@@ -285,10 +298,13 @@ public final class NuvioAetherPlayer {
         engine.selectAudioTrack(index: id)
     }
 
+    /// Selects a subtitle track by `NuvioAetherTrack.id`; a negative id turns subtitles off.
     public func selectSubtitleTrack(id: Int) {
-        selectedSubtitleId = id >= 0 ? id : nil
-        subtitleTracks = subtitleTracks.map {
-            NuvioAetherTrack(index: $0.index, id: $0.id, title: $0.title, language: $0.language, selected: $0.id == selectedSubtitleId)
+        guard isLoaded else { return }
+        if id >= 0 {
+            engine.selectSubtitleTrack(index: id)
+        } else {
+            engine.clearSubtitle()
         }
     }
 
@@ -318,6 +334,9 @@ public final class NuvioAetherPlayer {
         return engine.clock.currentTime
     }
     public var bufferedSeconds: Double { engine.clock.bufferedPosition }
+    /// Source PTS of the frame on screen (~10 Hz), the axis `subtitleCues` are timed on. Holds the
+    /// displayed frame during a seek rather than jumping to the target.
+    public var subtitleClockSeconds: Double { engine.clock.sourceTime }
     public var speed: Float { requestedSpeed }
     public var videoWidth: Int { Int(engine.sourceVideoWidth) }
     public var videoHeight: Int { Int(engine.sourceVideoHeight) }

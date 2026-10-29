@@ -8,9 +8,9 @@ import ComposeApp
 /// AetherEngine-backed implementation of the Kotlin player bridge.
 ///
 /// Covers load, transport, position/duration, audio/subtitle track lists and selection,
-/// playback state and errors. mpv-specific calls (video output tuning, subtitle styling,
-/// raw property reads) and features not wired to AetherEngine yet (PiP, Now Playing,
-/// subtitle rendering) are safe no-ops.
+/// text subtitles (drawn by `AetherSubtitleOverlayView`), playback state and errors. mpv-specific
+/// calls (video output tuning, raw property reads) and features not wired to AetherEngine yet
+/// (PiP, Now Playing) are safe no-ops.
 final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
 
     private var playerVC: AetherPlayerViewController?
@@ -138,7 +138,7 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
         return t[Int(at)].selected
     }
 
-    // Subtitle tracks (listing only; cues are not rendered on the Aether path yet)
+    // Subtitle tracks (text cues are drawn by the overlay; bitmap tracks list but do not draw yet)
     func getSubtitleTrackCount() -> Int32 { Int32(playerVC?.subtitleTracks.count ?? 0) }
     func getSubtitleTrackIndex(at: Int32) -> Int32 {
         guard let t = playerVC?.subtitleTracks, Int(at) < t.count else { return 0 }
@@ -234,6 +234,7 @@ final class AetherPlayerViewController: UIViewController {
     private var keyboardShortcutsEnabled = true
     private var keyboardShortcutHandler: ((String) -> Void)?
     private var initErrorMessage = ""
+    private let subtitleOverlay = AetherSubtitleOverlayView()
 
     var preferredAudioLanguages: [String] = [] {
         didSet { player?.preferredAudioLanguages = preferredAudioLanguages }
@@ -324,6 +325,7 @@ final class AetherPlayerViewController: UIViewController {
             player.view.frame = view.bounds
             player.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             view.addSubview(player.view)
+            attachSubtitleOverlay(to: player)
             self.player = player
             return player
         } catch {
@@ -359,6 +361,8 @@ final class AetherPlayerViewController: UIViewController {
     func retryPlayback() { player?.retry() }
 
     func destroyPlayer() {
+        subtitleOverlay.clock = nil
+        subtitleOverlay.reset()
         player?.destroy()
         player?.view.removeFromSuperview()
         player = nil
@@ -380,6 +384,26 @@ final class AetherPlayerViewController: UIViewController {
     func setVideoZoom(_ scale: Double) {
         let clamped = CGFloat(max(scale, 1.0))
         player?.view.transform = CGAffineTransform(scaleX: clamped, y: clamped)
+    }
+
+    // MARK: - Subtitles
+
+    /// The overlay sits above the video surface (and outside its zoom transform), below Compose's controls.
+    private func attachSubtitleOverlay(to player: NuvioAetherPlayer) {
+        subtitleOverlay.frame = view.bounds
+        subtitleOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(subtitleOverlay)
+        subtitleOverlay.clock = { [weak player] in
+            guard let player else { return nil }
+            return AetherSubtitleOverlayView.Clock(
+                seconds: player.subtitleClockSeconds,
+                isRunning: player.isPlaying && !player.isLoading,
+                rate: Double(player.speed)
+            )
+        }
+        player.onSubtitleCuesChanged = { [weak self] cues in
+            self?.subtitleOverlay.cues = cues
+        }
     }
 
     // MARK: - Tracks
