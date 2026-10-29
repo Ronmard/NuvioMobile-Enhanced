@@ -611,8 +611,10 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
         "$callback dropped: request no longer current (${nextEpisodeThresholdBlockers()})"
     }
 
+    val prepared = takePreparedNextEpisode(nextVideoId)
     scope.launchPlayerNextEpisodeAutoPlay(
         previousJob = nextEpisodeAutoPlayJob,
+        prepared = prepared,
         nextEpisodeInfo = nextEpisodeInfo,
         allEpisodes = playerMetaVideos,
         parentMetaId = parentMetaId,

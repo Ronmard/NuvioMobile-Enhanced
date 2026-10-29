@@ -101,6 +101,8 @@ data class PlayerSettingsUiState(
     val nextEpisodeThresholdPercent: Float = 99f,
     val nextEpisodeThresholdMinutesBeforeEnd: Float = 2f,
     val preloadNextEpisodeSources: Boolean = false,
+    val prepareNextEpisodePercent: Float = 70f,
+    val prepareNextEpisodeEnabled: Boolean = true,
     val miniPlayerEnabled: Boolean = true,
     val privateViewingEnabled: Boolean = false,
     val useLibmpvAss: Boolean = false,
@@ -198,6 +200,8 @@ object PlayerSettingsRepository {
     private var nextEpisodeThresholdPercent = 99f
     private var nextEpisodeThresholdMinutesBeforeEnd = 2f
     private var preloadNextEpisodeSources = false
+    private var prepareNextEpisodePercent = 70f
+    private var prepareNextEpisodeEnabled = true
     private var miniPlayerEnabled = true
     private var privateViewingEnabled = false
     private var useLibmpvAss = false
@@ -300,6 +304,8 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = 99f
         nextEpisodeThresholdMinutesBeforeEnd = 2f
         preloadNextEpisodeSources = false
+        prepareNextEpisodePercent = 70f
+        prepareNextEpisodeEnabled = true
         miniPlayerEnabled = true
         privateViewingEnabled = false
         useLibmpvAss = false
@@ -465,6 +471,8 @@ object PlayerSettingsRepository {
         nextEpisodeThresholdPercent = PlayerSettingsStorage.loadNextEpisodeThresholdPercent() ?: 99f
         nextEpisodeThresholdMinutesBeforeEnd = PlayerSettingsStorage.loadNextEpisodeThresholdMinutesBeforeEnd() ?: 2f
         preloadNextEpisodeSources = PlayerSettingsStorage.loadPreloadNextEpisodeSources() ?: false
+        prepareNextEpisodePercent = PlayerSettingsStorage.loadPrepareNextEpisodePercent() ?: 70f
+        prepareNextEpisodeEnabled = PlayerSettingsStorage.loadPrepareNextEpisodeEnabled() ?: true
         miniPlayerEnabled = PlayerSettingsStorage.loadMiniPlayerEnabled() ?: true
         privateViewingEnabled = PlayerSettingsStorage.loadPrivateViewingEnabled() ?: false
         useLibmpvAss = PlayerSettingsStorage.loadUseLibmpvAss() ?: false
@@ -1080,6 +1088,22 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.savePreloadNextEpisodeSources(enabled)
     }
 
+    fun setPrepareNextEpisodePercent(value: Float) {
+        ensureLoaded()
+        if (prepareNextEpisodePercent == value) return
+        prepareNextEpisodePercent = value
+        publish()
+        PlayerSettingsStorage.savePrepareNextEpisodePercent(value)
+    }
+
+    fun setPrepareNextEpisodeEnabled(value: Boolean) {
+        ensureLoaded()
+        if (prepareNextEpisodeEnabled == value) return
+        prepareNextEpisodeEnabled = value
+        publish()
+        PlayerSettingsStorage.savePrepareNextEpisodeEnabled(value)
+    }
+
     fun setMiniPlayerEnabled(enabled: Boolean) {
         ensureLoaded()
         if (miniPlayerEnabled == enabled) return
@@ -1370,6 +1394,8 @@ object PlayerSettingsRepository {
             nextEpisodeThresholdPercent = nextEpisodeThresholdPercent,
             nextEpisodeThresholdMinutesBeforeEnd = nextEpisodeThresholdMinutesBeforeEnd,
             preloadNextEpisodeSources = preloadNextEpisodeSources,
+            prepareNextEpisodePercent = prepareNextEpisodePercent,
+            prepareNextEpisodeEnabled = prepareNextEpisodeEnabled,
             miniPlayerEnabled = miniPlayerEnabled,
             privateViewingEnabled = privateViewingEnabled,
             useLibass = useLibass,

@@ -104,6 +104,8 @@ actual object PlayerSettingsStorage {
     private const val nextEpisodeThresholdPercentKey = "next_episode_threshold_percent_v2"
     private const val nextEpisodeThresholdMinutesBeforeEndKey = "next_episode_threshold_minutes_before_end_v2"
     private const val preloadNextEpisodeSourcesKey = "preload_next_episode_sources"
+    private const val prepareNextEpisodePercentKey = "prepare_next_episode_percent"
+    private const val prepareNextEpisodeEnabledKey = "prepare_next_episode_enabled"
     private const val miniPlayerEnabledKey = "mini_player_enabled"
     private const val privateViewingEnabledKey = "private_viewing_enabled"
     private const val useLibassKey = "use_libass"
@@ -184,6 +186,8 @@ actual object PlayerSettingsStorage {
         nextEpisodeThresholdPercentKey,
         nextEpisodeThresholdMinutesBeforeEndKey,
         preloadNextEpisodeSourcesKey,
+        prepareNextEpisodePercentKey,
+        prepareNextEpisodeEnabledKey,
         miniPlayerEnabledKey,
         useLibassKey,
         libassRenderTypeKey,
@@ -1464,6 +1468,32 @@ actual object PlayerSettingsStorage {
             ?.apply()
     }
 
+    actual fun loadPrepareNextEpisodeEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(prepareNextEpisodeEnabledKey)
+            if (sharedPreferences.contains(key)) sharedPreferences.getBoolean(key, true) else null
+        }
+
+    actual fun savePrepareNextEpisodeEnabled(value: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(prepareNextEpisodeEnabledKey), value)
+            ?.apply()
+    }
+
+    actual fun loadPrepareNextEpisodePercent(): Float? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(prepareNextEpisodePercentKey)
+            if (sharedPreferences.contains(key)) sharedPreferences.getFloat(key, 70f) else null
+        }
+
+    actual fun savePrepareNextEpisodePercent(value: Float) {
+        preferences
+            ?.edit()
+            ?.putFloat(ProfileScopedKey.of(prepareNextEpisodePercentKey), value)
+            ?.apply()
+    }
+
     actual fun loadPreloadNextEpisodeSources(): Boolean? =
         preferences?.let { sharedPreferences ->
             val key = ProfileScopedKey.of(preloadNextEpisodeSourcesKey)
@@ -1755,6 +1785,8 @@ actual object PlayerSettingsStorage {
         loadNextEpisodeThresholdPercent()?.let { put(nextEpisodeThresholdPercentKey, encodeSyncFloat(it)) }
         loadNextEpisodeThresholdMinutesBeforeEnd()?.let { put(nextEpisodeThresholdMinutesBeforeEndKey, encodeSyncFloat(it)) }
         loadPreloadNextEpisodeSources()?.let { put(preloadNextEpisodeSourcesKey, encodeSyncBoolean(it)) }
+        loadPrepareNextEpisodePercent()?.let { put(prepareNextEpisodePercentKey, encodeSyncFloat(it)) }
+        loadPrepareNextEpisodeEnabled()?.let { put(prepareNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
         loadMiniPlayerEnabled()?.let { put(miniPlayerEnabledKey, encodeSyncBoolean(it)) }
         loadUseLibass()?.let { put(useLibassKey, encodeSyncBoolean(it)) }
         loadLibassRenderType()?.let { put(libassRenderTypeKey, encodeSyncString(it)) }
@@ -1846,6 +1878,8 @@ actual object PlayerSettingsStorage {
         payload.decodeSyncFloat(nextEpisodeThresholdPercentKey)?.let(::saveNextEpisodeThresholdPercent)
         payload.decodeSyncFloat(nextEpisodeThresholdMinutesBeforeEndKey)?.let(::saveNextEpisodeThresholdMinutesBeforeEnd)
         payload.decodeSyncBoolean(preloadNextEpisodeSourcesKey)?.let(::savePreloadNextEpisodeSources)
+        payload.decodeSyncFloat(prepareNextEpisodePercentKey)?.let(::savePrepareNextEpisodePercent)
+        payload.decodeSyncBoolean(prepareNextEpisodeEnabledKey)?.let(::savePrepareNextEpisodeEnabled)
         payload.decodeSyncBoolean(miniPlayerEnabledKey)?.let(::saveMiniPlayerEnabled)
         payload.decodeSyncBoolean(useLibassKey)?.let(::saveUseLibass)
         payload.decodeSyncString(libassRenderTypeKey)?.let(::saveLibassRenderType)

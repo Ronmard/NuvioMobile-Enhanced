@@ -1543,6 +1543,68 @@ private fun PlaybackSettingsSection(
                     onCheckedChange = PlayerSettingsRepository::setPreloadNextEpisodeSources,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_playback_prepare_next_episode),
+                    description = stringResource(Res.string.settings_playback_prepare_next_episode_description),
+                    checked = autoPlayPlayerSettings.prepareNextEpisodeEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setPrepareNextEpisodeEnabled,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                if (autoPlayPlayerSettings.prepareNextEpisodeEnabled) {
+                    val preparePercent = autoPlayPlayerSettings.prepareNextEpisodePercent
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = if (isTablet) 18.dp else 16.dp, vertical = 10.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_prepare_next_episode_percent),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = stringResource(Res.string.settings_playback_prepare_next_episode_percent_description),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            ValueBox(text = stringResource(
+                                Res.string.settings_playback_threshold_percentage_value,
+                                formatStep(preparePercent)), modifier = Modifier.wrapContentWidth())
+                        }
+                        var sliderValue by remember(preparePercent) { mutableFloatStateOf(preparePercent) }
+                        var lastHapticPercent by remember(preparePercent) { mutableStateOf(preparePercent) }
+                        Slider(
+                            value = sliderValue,
+                            onValueChange = {
+                                val snapped = snapToStep(it, 5f)
+                                sliderValue = snapped
+
+                                if (snapped != lastHapticPercent) {
+                                    lastHapticPercent = snapped
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            },
+                            onValueChangeFinished = {
+                                PlayerSettingsRepository.setPrepareNextEpisodePercent(sliderValue)
+                            },
+                            valueRange = 50f..95f,
+                            steps = calculateSteps(50f, 95f, 5f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary,
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                }
                 var showThresholdModeDialog by remember { mutableStateOf(false) }
                 SettingsNavigationRow(
                     title = stringResource(Res.string.settings_playback_threshold_mode),

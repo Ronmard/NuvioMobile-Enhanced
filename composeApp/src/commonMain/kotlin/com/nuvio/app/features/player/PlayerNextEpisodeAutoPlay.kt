@@ -20,6 +20,7 @@ import com.nuvio.app.features.watching.domain.isShortPlaceholderDuration
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -91,6 +92,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     onSourceNameChanged: (String?) -> Unit,
     onCountdownChanged: (Int?) -> Unit,
     onNextEpisodeCardVisibleChanged: (Boolean) -> Unit,
+    prepared: PreparedNextEpisode? = null,
 ): Job? {
     val nextVideoId = nextEpisodeInfo?.videoId ?: return null
     val nextVideo = allEpisodes.firstOrNull { video -> video.id == nextVideoId } ?: return null
@@ -113,6 +115,58 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     onCountdownChanged(null)
 
     val type = contentType ?: parentMetaType
+    return launch {
+        val preparedStream = prepared?.takeIf { it.videoId == nextVideo.id }?.playableStream()
+        val result = if (preparedStream != null) {
+            NextEpisodeDiagnostics.log { "using prepared stream source=${preparedStream.name ?: preparedStream.addonName}" }
+            NextEpisodeSearchResult.Selected(stream = preparedStream, sourceStream = prepared?.sourceStream ?: preparedStream)
+        } else {
+            searchNextEpisodeStream(nextVideo, type, settings, currentStreamBingeGroup, background = false)
+        }
+        onSearchingChanged(false)
+        when (result) {
+            is NextEpisodeSearchResult.Selected -> {
+                val selected = result.stream
+                onSourceNameChanged((selected.name?.takeIf { it.isNotBlank() } ?: selected.addonName).trim())
+                for (i in 3 downTo 1) {
+                    onCountdownChanged(i)
+                    delay(1000)
+                }
+                onEpisodeStreamSelected(selected, nextVideo)
+                onNextEpisodeCardVisibleChanged(false)
+                onCountdownChanged(null)
+                onSourceNameChanged(null)
+            }
+            is NextEpisodeSearchResult.NoSelection -> {
+                NextEpisodeDiagnostics.log {
+                    "picker opened: reason=${result.reason} " +
+                        "state=${NextEpisodeDiagnostics.describe(PlayerStreamsRepository.episodeStreamsState.value)}"
+                }
+                onManualSelectionRequired(nextVideo)
+                onNextEpisodeCardVisibleChanged(false)
+            }
+        }
+    }
+}
+
+internal sealed interface NextEpisodeSearchResult {
+    /** [stream] is playable (debrid-resolved); [sourceStream] is what the selector picked, for re-resolving. */
+    data class Selected(val stream: StreamItem, val sourceStream: StreamItem) : NextEpisodeSearchResult
+    data class NoSelection(val reason: String) : NextEpisodeSearchResult
+}
+
+/**
+ * Searches the next episode's sources and applies the auto-play rules (including Prefer Binge Group),
+ * then resolves the pick to a playable stream. [background] suppresses the debrid failure toast and
+ * refresh, for a prepare that runs while the current episode plays.
+ */
+internal suspend fun searchNextEpisodeStream(
+    nextVideo: MetaVideo,
+    type: String,
+    settings: PlayerSettingsUiState,
+    currentStreamBingeGroup: String?,
+    background: Boolean,
+): NextEpisodeSearchResult = coroutineScope {
     // Mirrors StreamAutoPlayPolicy.isEffectivelyEnabled: a user whose initial-playback source
     // gets auto-picked via "reuse last link" (or a reused binge group) shouldn't be prompted to
     // choose a source again just because they hit Next Episode instead of starting fresh.
@@ -161,194 +215,191 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
         null
     }
 
-    return launch {
-        PlayerStreamsRepository.loadEpisodeStreams(
-            type = type,
-            videoId = nextVideo.id,
-            season = nextVideo.season,
-            episode = nextVideo.episode,
+    PlayerStreamsRepository.loadEpisodeStreams(
+        type = type,
+        videoId = nextVideo.id,
+        season = nextVideo.season,
+        episode = nextVideo.episode,
+    )
+    NextEpisodeDiagnostics.log {
+        "search start next=${nextVideo.id} mode=$effectiveMode timeout=${settings.streamAutoPlayTimeoutSeconds}s " +
+            "bingeGroup=$preferredBingeGroup bingeOnly=$bingeGroupOnlyManualMode " +
+            "state=${NextEpisodeDiagnostics.describe(PlayerStreamsRepository.episodeStreamsState.value)}"
+    }
+
+    if (effectiveMode == StreamAutoPlayMode.MANUAL) {
+        return@coroutineScope NextEpisodeSearchResult.NoSelection("manual mode (no auto-select rule enabled)")
+    }
+
+    val installedAddonNames = AddonRepository.uiState.value.addons
+        .enabledAddons()
+        .map { it.displayTitle }
+        .toSet()
+    val debridSettings = DebridSettingsRepository.snapshot()
+
+    val timeoutSeconds = settings.streamAutoPlayTimeoutSeconds
+    var autoSelectTriggered = false
+    var timeoutElapsed = false
+    var selectedStream: StreamItem? = null
+    var selectedVia: String? = null
+    val autoSelectSettled = CompletableDeferred<Unit>()
+
+    fun settleAutoSelect() {
+        if (!autoSelectSettled.isCompleted) {
+            autoSelectSettled.complete(Unit)
+        }
+    }
+
+    fun selectStream(stream: StreamItem, via: String) {
+        selectedVia = via
+        autoSelectTriggered = true
+        selectedStream = stream
+        settleAutoSelect()
+    }
+
+    fun finishWithoutSelection() {
+        autoSelectTriggered = true
+        settleAutoSelect()
+    }
+
+    fun trySelectStream(streams: List<StreamItem>): StreamItem? =
+        StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = streams,
+            mode = effectiveMode,
+            regexPattern = effectiveRegex,
+            source = effectiveSource,
+            installedAddonNames = installedAddonNames,
+            selectedAddons = effectiveSelectedAddons,
+            selectedPlugins = effectiveSelectedPlugins,
+            preferredBingeGroup = preferredBingeGroup,
+            preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
+            bingeGroupOnly = bingeGroupOnlyManualMode,
+            debridEnabled = debridSettings.canResolvePlayableLinks,
+            activeResolverProviderId = debridSettings.activeResolverProviderId,
         )
-        NextEpisodeDiagnostics.log {
-            "search start next=${nextVideo.id} mode=$effectiveMode timeout=${settings.streamAutoPlayTimeoutSeconds}s " +
-                "bingeGroup=$preferredBingeGroup bingeOnly=$bingeGroupOnlyManualMode " +
-                "state=${NextEpisodeDiagnostics.describe(PlayerStreamsRepository.episodeStreamsState.value)}"
-        }
 
-        if (effectiveMode == StreamAutoPlayMode.MANUAL) {
-            NextEpisodeDiagnostics.log { "picker opened: reason=manual mode (no auto-select rule enabled)" }
-            onSearchingChanged(false)
-            onNextEpisodeCardVisibleChanged(false)
-            onManualSelectionRequired(nextVideo)
-            return@launch
-        }
+    fun tryBingeGroupOnly(streams: List<StreamItem>): StreamItem? {
+        if (preferredBingeGroup == null || !settings.streamAutoPlayPreferBingeGroup) return null
+        return StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = streams,
+            mode = effectiveMode,
+            regexPattern = effectiveRegex,
+            source = effectiveSource,
+            installedAddonNames = installedAddonNames,
+            selectedAddons = effectiveSelectedAddons,
+            selectedPlugins = effectiveSelectedPlugins,
+            preferredBingeGroup = preferredBingeGroup,
+            preferBingeGroupInSelection = true,
+            bingeGroupOnly = true,
+            debridEnabled = debridSettings.canResolvePlayableLinks,
+            activeResolverProviderId = debridSettings.activeResolverProviderId,
+        )
+    }
 
-        val installedAddonNames = AddonRepository.uiState.value.addons
-            .enabledAddons()
-            .map { it.displayTitle }
-            .toSet()
-        val debridSettings = DebridSettingsRepository.snapshot()
+    val innerJob = launch {
+        PlayerStreamsRepository.episodeStreamsState.collectLatest { state ->
+            if (state.groups.isEmpty() && state.isAnyLoading) return@collectLatest
 
-        val timeoutSeconds = settings.streamAutoPlayTimeoutSeconds
-        var autoSelectTriggered = false
-        var timeoutElapsed = false
-        var selectedStream: StreamItem? = null
-        var selectedVia: String? = null
-        val autoSelectSettled = CompletableDeferred<Unit>()
+            val allStreams = state.groups.flatMap { it.streams }
 
-        fun settleAutoSelect() {
-            if (!autoSelectSettled.isCompleted) {
-                autoSelectSettled.complete(Unit)
-            }
-        }
-
-        fun selectStream(stream: StreamItem, via: String) {
-            selectedVia = via
-            autoSelectTriggered = true
-            selectedStream = stream
-            settleAutoSelect()
-        }
-
-        fun finishWithoutSelection() {
-            autoSelectTriggered = true
-            settleAutoSelect()
-        }
-
-        fun trySelectStream(streams: List<StreamItem>): StreamItem? =
-            StreamAutoPlaySelector.selectAutoPlayStream(
-                streams = streams,
-                mode = effectiveMode,
-                regexPattern = effectiveRegex,
-                source = effectiveSource,
-                installedAddonNames = installedAddonNames,
-                selectedAddons = effectiveSelectedAddons,
-                selectedPlugins = effectiveSelectedPlugins,
-                preferredBingeGroup = preferredBingeGroup,
-                preferBingeGroupInSelection = settings.streamAutoPlayPreferBingeGroup,
-                bingeGroupOnly = bingeGroupOnlyManualMode,
-                debridEnabled = debridSettings.canResolvePlayableLinks,
-                activeResolverProviderId = debridSettings.activeResolverProviderId,
-            )
-
-        fun tryBingeGroupOnly(streams: List<StreamItem>): StreamItem? {
-            if (preferredBingeGroup == null || !settings.streamAutoPlayPreferBingeGroup) return null
-            return StreamAutoPlaySelector.selectAutoPlayStream(
-                streams = streams,
-                mode = effectiveMode,
-                regexPattern = effectiveRegex,
-                source = effectiveSource,
-                installedAddonNames = installedAddonNames,
-                selectedAddons = effectiveSelectedAddons,
-                selectedPlugins = effectiveSelectedPlugins,
-                preferredBingeGroup = preferredBingeGroup,
-                preferBingeGroupInSelection = true,
-                bingeGroupOnly = true,
-                debridEnabled = debridSettings.canResolvePlayableLinks,
-                activeResolverProviderId = debridSettings.activeResolverProviderId,
-            )
-        }
-
-        val innerJob = launch {
-            PlayerStreamsRepository.episodeStreamsState.collectLatest { state ->
-                if (state.groups.isEmpty() && state.isAnyLoading) return@collectLatest
-
-                val allStreams = state.groups.flatMap { it.streams }
-
-                if (autoSelectTriggered) {
-                    // Already resolved.
-                } else if (timeoutElapsed) {
-                    if (allStreams.isNotEmpty()) {
-                        val candidate = trySelectStream(allStreams)
-                        if (candidate != null) {
-                            selectStream(candidate, "after timeout")
-                        }
-                    }
-                } else if (allStreams.isNotEmpty()) {
-                    val earlyMatch = tryBingeGroupOnly(allStreams)
-                    if (earlyMatch != null) {
-                        selectStream(earlyMatch, "early binge-group match")
+            if (autoSelectTriggered) {
+                // Already resolved.
+            } else if (timeoutElapsed) {
+                if (allStreams.isNotEmpty()) {
+                    val candidate = trySelectStream(allStreams)
+                    if (candidate != null) {
+                        selectStream(candidate, "after timeout")
                     }
                 }
-
-                if (!autoSelectTriggered && !state.isAnyLoading) {
-                    if (allStreams.isNotEmpty()) {
-                        val candidate = trySelectStream(allStreams)
-                        if (candidate != null) {
-                            selectStream(candidate, "all addons answered")
-                        }
-                    }
-                    if (!autoSelectTriggered) {
-                        finishWithoutSelection()
-                    }
-                    return@collectLatest
+            } else if (allStreams.isNotEmpty()) {
+                val earlyMatch = tryBingeGroupOnly(allStreams)
+                if (earlyMatch != null) {
+                    selectStream(earlyMatch, "early binge-group match")
                 }
-
-                if (autoSelectTriggered) return@collectLatest
             }
-        }
 
-        val timeoutMs = timeoutSeconds * 1_000L
-        val isBoundedTimeout = timeoutSeconds in 1..30
-
-        if (isBoundedTimeout) {
-            // If streams are already cached (preload), autoSelectSettled
-            // completes immediately. Don't wait the full timeout in that case.
-            val settled = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { autoSelectSettled.await() }
-            if (settled == null) {
-                timeoutElapsed = true
-                NextEpisodeDiagnostics.log {
-                    "search timeout ${timeoutSeconds}s: ${NextEpisodeDiagnostics.describe(PlayerStreamsRepository.episodeStreamsState.value)}"
+            if (!autoSelectTriggered && !state.isAnyLoading) {
+                if (allStreams.isNotEmpty()) {
+                    val candidate = trySelectStream(allStreams)
+                    if (candidate != null) {
+                        selectStream(candidate, "all addons answered")
+                    }
                 }
                 if (!autoSelectTriggered) {
-                    val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
-                    if (allStreams.isNotEmpty()) {
-                        val candidate = trySelectStream(allStreams)
-                        if (candidate != null) {
-                            selectStream(candidate, "at timeout")
-                        }
-                    }
+                    finishWithoutSelection()
                 }
+                return@collectLatest
             }
-            innerJob.cancel()
-            if (selectedStream == null && !autoSelectTriggered) {
-                finishWithoutSelection()
-            }
-        } else {
+
+            if (autoSelectTriggered) return@collectLatest
+        }
+    }
+
+    val timeoutMs = timeoutSeconds * 1_000L
+    val isBoundedTimeout = timeoutSeconds in 1..30
+
+    if (isBoundedTimeout) {
+        // If streams are already cached (preload), autoSelectSettled
+        // completes immediately. Don't wait the full timeout in that case.
+        val settled = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { autoSelectSettled.await() }
+        if (settled == null) {
             timeoutElapsed = true
+            NextEpisodeDiagnostics.log {
+                "search timeout ${timeoutSeconds}s: ${NextEpisodeDiagnostics.describe(PlayerStreamsRepository.episodeStreamsState.value)}"
+            }
             if (!autoSelectTriggered) {
                 val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
                 if (allStreams.isNotEmpty()) {
-                    trySelectStream(allStreams)?.let { selectStream(it, "cached before wait") }
+                    val candidate = trySelectStream(allStreams)
+                    if (candidate != null) {
+                        selectStream(candidate, "at timeout")
+                    }
                 }
-            }
-            val completed = withTimeoutOrNull(NEXT_EPISODE_HARD_TIMEOUT_MS) { autoSelectSettled.await() }
-            innerJob.cancel()
-            if (completed == null && !autoSelectTriggered) {
-                val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
-                if (allStreams.isNotEmpty()) {
-                    selectedStream = trySelectStream(allStreams)
-                    if (selectedStream != null) selectedVia = "at hard timeout"
-                }
-                finishWithoutSelection()
             }
         }
+        innerJob.cancel()
+        if (selectedStream == null && !autoSelectTriggered) {
+            finishWithoutSelection()
+        }
+    } else {
+        timeoutElapsed = true
+        if (!autoSelectTriggered) {
+            val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
+            if (allStreams.isNotEmpty()) {
+                trySelectStream(allStreams)?.let { selectStream(it, "cached before wait") }
+            }
+        }
+        val completed = withTimeoutOrNull(NEXT_EPISODE_HARD_TIMEOUT_MS) { autoSelectSettled.await() }
+        innerJob.cancel()
+        if (completed == null && !autoSelectTriggered) {
+            val allStreams = PlayerStreamsRepository.episodeStreamsState.value.groups.flatMap { it.streams }
+            if (allStreams.isNotEmpty()) {
+                selectedStream = trySelectStream(allStreams)
+                if (selectedStream != null) selectedVia = "at hard timeout"
+            }
+            finishWithoutSelection()
+        }
+    }
 
-        val decisionState = PlayerStreamsRepository.episodeStreamsState.value
-        NextEpisodeDiagnostics.log {
-            val stream = selectedStream
-            if (stream != null) {
-                "auto-select decided via=$selectedVia source=${stream.name ?: stream.addonName} " +
-                    "addon=${stream.addonName} bingeGroup=${stream.behaviorHints.bingeGroup} " +
-                    "state=${NextEpisodeDiagnostics.describe(decisionState)}"
-            } else {
-                "auto-select decided: no stream state=${NextEpisodeDiagnostics.describe(decisionState)}"
-            }
+    val decisionState = PlayerStreamsRepository.episodeStreamsState.value
+    NextEpisodeDiagnostics.log {
+        val stream = selectedStream
+        if (stream != null) {
+            "auto-select decided via=$selectedVia source=${stream.name ?: stream.addonName} " +
+                "addon=${stream.addonName} bingeGroup=${stream.behaviorHints.bingeGroup} " +
+                "state=${NextEpisodeDiagnostics.describe(decisionState)}"
+        } else {
+            "auto-select decided: no stream state=${NextEpisodeDiagnostics.describe(decisionState)}"
         }
-        var debridFailure: String? = null
-        val selected = selectedStream?.let { stream ->
-            when (val result = DirectDebridPlaybackResolver.resolveToPlayableStream(stream, nextVideo.season, nextVideo.episode)) {
-                is DirectDebridPlayableResult.Success -> result.stream
-                else -> {
-                    debridFailure = result::class.simpleName ?: "unknown"
+    }
+    var debridFailure: String? = null
+    val selected = selectedStream?.let { stream ->
+        when (val result = DirectDebridPlaybackResolver.resolveToPlayableStream(stream, nextVideo.season, nextVideo.episode)) {
+            is DirectDebridPlayableResult.Success -> result.stream
+            else -> {
+                debridFailure = result::class.simpleName ?: "unknown"
+                // A background prepare stays silent; the transition retries through today's flow.
+                if (!background) {
                     result.toastMessage()?.let { NuvioToastController.show(it) }
                     PlayerStreamsRepository.loadEpisodeStreams(
                         type = type,
@@ -357,42 +408,31 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                         episode = nextVideo.episode,
                         forceRefresh = true,
                     )
-                    null
                 }
+                null
             }
         }
-        onSearchingChanged(false)
-        if (selected != null) {
-            onSourceNameChanged((selected.name?.takeIf { it.isNotBlank() } ?: selected.addonName).trim())
-            for (i in 3 downTo 1) {
-                onCountdownChanged(i)
-                delay(1000)
-            }
-            onEpisodeStreamSelected(selected, nextVideo)
-            onNextEpisodeCardVisibleChanged(false)
-            onCountdownChanged(null)
-            onSourceNameChanged(null)
-        } else {
-            NextEpisodeDiagnostics.log {
-                val streams = decisionState.groups.flatMap { it.streams }
-                val reason = when {
-                    debridFailure != null -> "debrid resolve failed ($debridFailure)"
-                    streams.isEmpty() && decisionState.isAnyLoading -> "search timed out with no streams yet"
-                    streams.isEmpty() -> "no sources"
-                    preferredBingeGroup != null && tryBingeGroupOnly(streams) == null ->
-                        if (bingeGroupOnlyManualMode) {
-                            "binge-group miss (group=$preferredBingeGroup), fallback not allowed"
-                        } else {
-                            "binge-group miss (group=$preferredBingeGroup) then fallback failed: nothing passed the auto-play filters"
-                        }
-                    decisionState.isAnyLoading -> "search timed out: nothing passed the auto-play filters so far"
-                    else -> "nothing passed the auto-play filters"
-                }
-                "picker opened: reason=$reason state=${NextEpisodeDiagnostics.describe(decisionState)}"
-            }
-            onManualSelectionRequired(nextVideo)
-            onNextEpisodeCardVisibleChanged(false)
-        }
+    }
+    val source = selectedStream
+    if (selected != null && source != null) {
+        NextEpisodeSearchResult.Selected(stream = selected, sourceStream = source)
+    } else {
+        val streams = decisionState.groups.flatMap { it.streams }
+        NextEpisodeSearchResult.NoSelection(
+            when {
+                debridFailure != null -> "debrid resolve failed ($debridFailure)"
+                streams.isEmpty() && decisionState.isAnyLoading -> "search timed out with no streams yet"
+                streams.isEmpty() -> "no sources"
+                preferredBingeGroup != null && tryBingeGroupOnly(streams) == null ->
+                    if (bingeGroupOnlyManualMode) {
+                        "binge-group miss (group=$preferredBingeGroup), fallback not allowed"
+                    } else {
+                        "binge-group miss (group=$preferredBingeGroup) then fallback failed: nothing passed the auto-play filters"
+                    }
+                decisionState.isAnyLoading -> "search timed out: nothing passed the auto-play filters so far"
+                else -> "nothing passed the auto-play filters"
+            },
+        )
     }
 }
 

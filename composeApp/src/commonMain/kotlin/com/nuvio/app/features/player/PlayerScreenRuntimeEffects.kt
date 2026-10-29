@@ -403,6 +403,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     BindPlayerMetadataAndSkipEffects()
     BindPartyEffects()
     BindDiscordRpcEffects()
+    BindNextEpisodePrepareEffects()
 
     DisposableEffect(activeSourceUrl) {
         val effectSourceUrl = activeSourceUrl
