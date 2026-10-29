@@ -63,6 +63,20 @@ internal fun PlayerScreenRuntime.isAtNextEpisodeThreshold(): Boolean {
     )
 }
 
+/**
+ * The only points where the next episode may start on its own: the episode has ended, or playback has
+ * reached the IntroDB/outro segment (and the card rule, which holds the card back over a post-credits
+ * scene, agrees). Without outro data the card's threshold only shows the card, for a manual Next.
+ */
+internal fun PlayerScreenRuntime.isNextEpisodeAutoStartPoint(): Boolean {
+    if (playbackSnapshot.isEnded) return true
+    val outroStartMs = skipIntervals
+        .filter { it.type in PlayerNextEpisodeRules.OUTRO_SEGMENT_TYPES }
+        .minOfOrNull { (it.startTime * 1_000.0).toLong() }
+        ?: return false
+    return playbackSnapshot.positionMs >= outroStartMs && isAtNextEpisodeThreshold()
+}
+
 internal fun PlayerScreenRuntime.cancelNextEpisodeAutoPlay(reason: String = "reset") {
     if (nextEpisodeAutoPlayJob?.isActive == true) {
         NextEpisodeDiagnostics.log {

@@ -599,7 +599,7 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
         nextEpisodeInfo?.videoId == nextVideoId &&
         (!automatic || (
             playerSettingsUiState.streamAutoPlayNextEpisodeEnabled &&
-                !nextEpisodeCardDismissed && isAtNextEpisodeThreshold()
+                !nextEpisodeCardDismissed && isAtNextEpisodeThreshold() && isNextEpisodeAutoStartPoint()
             ))
     if (!isCurrentRequest()) return
     nextEpisodeAutoPlayAutomatic = automatic
@@ -607,7 +607,7 @@ internal fun PlayerScreenRuntime.playNextEpisode(automatic: Boolean = false) {
         cause = when {
             !automatic -> "tap"
             playbackSnapshot.isEnded -> "end"
-            else -> "threshold/outro"
+            else -> "outro"
         } + " pos=${playbackSnapshot.positionMs} dur=${playbackSnapshot.durationMs} " +
             "skipSegments=${skipIntervals.joinToString { "${it.type}@${it.startTime.toInt()}-${it.endTime.toInt()}" }}",
         videoId = nextVideoId,

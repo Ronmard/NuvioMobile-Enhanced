@@ -778,21 +778,31 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         nextEpisodeCardDismissed,
     ) {
         val shouldShow = nextEpisodeInfo != null && !nextEpisodeCardDismissed && isAtNextEpisodeThreshold()
+        // The card shows at the threshold; the next episode only starts on its own at the outro or the end.
+        val autoStart = shouldShow && isNextEpisodeAutoStartPoint()
         if (nextEpisodeAutoPlayAutomatic &&
-            (!shouldShow || !playerSettingsUiState.streamAutoPlayNextEpisodeEnabled)
+            (!autoStart || !playerSettingsUiState.streamAutoPlayNextEpisodeEnabled)
         ) {
             cancelNextEpisodeAutoPlay(
-                if (!playerSettingsUiState.streamAutoPlayNextEpisodeEnabled) "auto-play disabled"
-                else "threshold condition lost (${nextEpisodeThresholdBlockers()})",
+                when {
+                    !playerSettingsUiState.streamAutoPlayNextEpisodeEnabled -> "auto-play disabled"
+                    shouldShow -> "before the outro and not ended (pos=${playbackSnapshot.positionMs})"
+                    else -> "threshold condition lost (${nextEpisodeThresholdBlockers()})"
+                },
             )
         }
         if (shouldShow && !showNextEpisodeCard) {
             showNextEpisodeCard = true
+        } else if (!shouldShow) {
+            showNextEpisodeCard = false
+        }
+        if (!autoStart) {
+            nextEpisodeAutoStartFired = false
+        } else if (!nextEpisodeAutoStartFired) {
+            nextEpisodeAutoStartFired = true
             if (playerSettingsUiState.streamAutoPlayNextEpisodeEnabled && nextEpisodeInfo?.hasAired == true && !isPartyControlLocked) {
                 playNextEpisode(automatic = true)
             }
-        } else if (!shouldShow) {
-            showNextEpisodeCard = false
         }
     }
 

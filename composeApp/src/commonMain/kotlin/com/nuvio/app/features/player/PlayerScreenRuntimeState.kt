@@ -224,6 +224,8 @@ internal class PlayerScreenRuntime(
     var nextEpisodeAutoPlayCountdown by mutableStateOf<Int?>(null)
     var nextEpisodeAutoPlayJob by mutableStateOf<Job?>(null)
     var nextEpisodeAutoPlayAutomatic by mutableStateOf(false)
+    /** The automatic start already ran for the current stretch at the outro or the end. */
+    var nextEpisodeAutoStartFired = false
     var nextEpisodePreloadJob by mutableStateOf<Job?>(null)
     var nextEpisodePreloadTriggered by mutableStateOf(false)
     val nextEpisodePrepare = NextEpisodePrepareState()
