@@ -40,7 +40,10 @@ internal fun SkipInterval.timelineSegmentKind(): PlayerTimelineSegmentKind? =
         }
     }
 
-/** The bands for these intervals, clamped to the duration; none until the duration is known. */
+/**
+ * The bands for these intervals, sorted and clamped to the duration (an open end, like animeskip's
+ * last one, runs to it); none until the duration is known. Empty or unknown ones are left out.
+ */
 internal fun List<SkipInterval>.timelineSegments(durationMs: Long): List<PlayerTimelineSegment> {
     if (isEmpty() || durationMs <= 0L) return emptyList()
     val durationSec = durationMs / 1000.0
@@ -50,7 +53,32 @@ internal fun List<SkipInterval>.timelineSegments(durationMs: Long): List<PlayerT
         val start = (interval.startTime / durationSec).coerceIn(0.0, 1.0).toFloat()
         val end = (interval.endTime / durationSec).coerceIn(0.0, 1.0).toFloat()
         if (end > start) PlayerTimelineSegment(start, end, kind, index) else null
+    }.withoutOverlaps()
+}
+
+/**
+ * Splits overlapping bands so each point of the bar shows one, never two blended: where they
+ * overlap the later-starting segment wins (a post-credits scene inside the credits), and on a tie
+ * the shorter one, then the first.
+ */
+private fun List<PlayerTimelineSegment>.withoutOverlaps(): List<PlayerTimelineSegment> {
+    if (size < 2) return this
+    val bounds = flatMap { listOf(it.start, it.end) }.distinct().sorted()
+    val pieces = mutableListOf<PlayerTimelineSegment>()
+    for (i in 0 until bounds.lastIndex) {
+        val from = bounds[i]
+        val to = bounds[i + 1]
+        val top = filter { it.start <= from && it.end >= to }
+            .maxWithOrNull(compareBy<PlayerTimelineSegment> { it.start }.thenByDescending { it.end })
+            ?: continue
+        val last = pieces.lastOrNull()
+        if (last != null && last.source == top.source && last.end == from) {
+            pieces[pieces.lastIndex] = last.copy(end = to)
+        } else {
+            pieces += top.copy(start = from, end = to)
+        }
     }
+    return pieces
 }
 
 @Immutable
