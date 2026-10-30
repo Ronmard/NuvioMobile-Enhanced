@@ -117,6 +117,7 @@ public final class NuvioAetherPlayer {
 
     private func observeEngine() {
         if NuvioAetherDebug.pgsLogging { observeEngineForDebugLogging() }
+        if NuvioAetherDebug.stallLogging { observeEngineForStallLogging() }
         engine.$state
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
@@ -253,6 +254,80 @@ public final class NuvioAetherPlayer {
             .store(in: &cancellables)
     }
 
+    // MARK: - Stall diagnostics (`NuvioAetherDebug.stallLogging`)
+
+    private var stallSampler: Timer?
+    private var stallObservers: [NSObjectProtocol] = []
+    private lazy var stallTag = String(UInt(bitPattern: ObjectIdentifier(self).hashValue) % 10_000)
+
+    private func stallLog(_ line: String) {
+        NuvioAetherDebug.stall("p\(stallTag) \(line)")
+    }
+
+    private func observeEngineForStallLogging() {
+        NuvioAetherDebug.installEngineLogForwarding()
+        engine.$playbackPhase
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] phase in self?.stallLog("phase -> \(phase) \(self?.stallSnapshot() ?? "")") }
+            .store(in: &cancellables)
+        engine.$state
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in self?.stallLog("state -> \(state)") }
+            .store(in: &cancellables)
+        engine.$isSessionReady
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] ready in self?.stallLog("isSessionReady -> \(ready)") }
+            .store(in: &cancellables)
+        let center = NotificationCenter.default
+        let events: [(Notification.Name, String)] = [
+            (UIApplication.didEnterBackgroundNotification, "app didEnterBackground"),
+            (UIApplication.willEnterForegroundNotification, "app willEnterForeground"),
+            (UIApplication.didBecomeActiveNotification, "app didBecomeActive"),
+            (UIApplication.willResignActiveNotification, "app willResignActive"),
+            (UIApplication.didReceiveMemoryWarningNotification, "app memory warning"),
+            (AVAudioSession.interruptionNotification, "audio interruption"),
+        ]
+        stallObservers = events.map { name, label in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let info = note.userInfo.map { " \($0)" } ?? ""
+                Task { @MainActor [weak self] in self?.stallLog("\(label)\(info) \(self?.stallSnapshot() ?? "")") }
+            }
+        }
+        let sampler = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isLoaded || self.isLoadInFlight else { return }
+                self.stallLog("sample \(self.stallSnapshot())")
+            }
+        }
+        RunLoop.main.add(sampler, forMode: .common)
+        stallSampler = sampler
+    }
+
+    private func stopStallLogging() {
+        stallSampler?.invalidate()
+        stallSampler = nil
+        stallObservers.forEach(NotificationCenter.default.removeObserver)
+        stallObservers = []
+    }
+
+    private func stallSnapshot() -> String {
+        let appState: String
+        switch UIApplication.shared.applicationState {
+        case .active: appState = "active"
+        case .inactive: appState = "inactive"
+        case .background: appState = "background"
+        @unknown default: appState = "unknown"
+        }
+        let pos = engine.clock.currentTime
+        let dur = engine.duration
+        let pct = dur > 0 ? String(format: "%.1f%%", pos / dur * 100) : "-"
+        return "app=\(appState) phase=\(engine.playbackPhase) state=\(engine.state) "
+            + "pos=\(String(format: "%.1f", pos)) buf=\(String(format: "%.1f", engine.clock.bufferedPosition)) "
+            + "dur=\(String(format: "%.1f", dur)) pct=\(pct) wantsPlay=\(wantsPlay) loaded=\(isLoaded) "
+            + "inFlight=\(isLoadInFlight) tornDown=\(isSessionTornDown) ready=\(engine.isSessionReady) "
+            + "route=\(engine.videoRoute.rawValue) err=\(errorMessage.isEmpty ? "-" : errorMessage)"
+    }
+
     private func logBitmapCues(engineCues: [SubtitleCue], mapped: [NuvioAetherSubtitleCue]) {
         guard NuvioAetherDebug.pgsLogging else { return }
         let images: [(cue: SubtitleCue, image: SubtitleImage)] = engineCues.compactMap { cue in
@@ -335,6 +410,8 @@ public final class NuvioAetherPlayer {
         pendingSeekSeconds = nil
         isLoadInFlight = true
 
+        stallLog("load start=\(startPosition.map { String(format: "%.1f", $0) } ?? "nil") autoplay=\(options.autoplay) "
+            + "host=\(url.host ?? "-") file=\(url.lastPathComponent)")
         let engine = self.engine
         loadTask = Task { @MainActor [weak self] in
             do {
@@ -424,6 +501,8 @@ public final class NuvioAetherPlayer {
             self.foregroundObserver = nil
         }
         isSessionTornDown = false
+        stallLog("destroy \(stallSnapshot())")
+        stopStallLogging()
         engine.stop()
         engine.unbind(view: surface)
     }
