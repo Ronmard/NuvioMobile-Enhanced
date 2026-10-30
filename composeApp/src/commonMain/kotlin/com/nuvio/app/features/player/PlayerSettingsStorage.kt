@@ -184,6 +184,8 @@ internal expect object PlayerSettingsStorage {
     fun savePrepareNextEpisodeEnabled(value: Boolean)
     fun loadMiniPlayerEnabled(): Boolean?
     fun saveMiniPlayerEnabled(enabled: Boolean)
+    fun loadSeekBarSegmentMarkersEnabled(): Boolean?
+    fun saveSeekBarSegmentMarkersEnabled(enabled: Boolean)
     fun loadPrivateViewingEnabled(): Boolean?
     fun savePrivateViewingEnabled(enabled: Boolean)
     fun loadUseLibass(): Boolean?

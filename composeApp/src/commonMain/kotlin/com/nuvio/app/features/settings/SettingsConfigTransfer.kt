@@ -782,6 +782,7 @@ internal object SettingsConfigTransfer {
         PlayerSettingsStorage.loadPrepareNextEpisodePercent()?.let { put("prepare_next_episode_percent", encodeSyncFloat(it)) }
         PlayerSettingsStorage.loadPrepareNextEpisodeEnabled()?.let { put("prepare_next_episode_enabled", encodeSyncBoolean(it)) }
         PlayerSettingsStorage.loadMiniPlayerEnabled()?.let { put("mini_player_enabled", encodeSyncBoolean(it)) }
+        PlayerSettingsStorage.loadSeekBarSegmentMarkersEnabled()?.let { put("seek_bar_segment_markers_enabled", encodeSyncBoolean(it)) }
         PlayerSettingsStorage.loadPrivateViewingEnabled()?.let { put("private_viewing_enabled", encodeSyncBoolean(it)) }
         PlayerSettingsStorage.loadUseLibass()?.let { put("use_libass", encodeSyncBoolean(it)) }
         PlayerSettingsStorage.loadLibassRenderType()?.let { put("libass_render_type", encodeSyncString(it)) }
@@ -890,6 +891,7 @@ internal object SettingsConfigTransfer {
         payload.decodeSyncFloat("prepare_next_episode_percent")?.let { PlayerSettingsStorage.savePrepareNextEpisodePercent(it) }
         payload.decodeSyncBoolean("prepare_next_episode_enabled")?.let { PlayerSettingsStorage.savePrepareNextEpisodeEnabled(it) }
         payload.decodeSyncBoolean("mini_player_enabled")?.let { PlayerSettingsStorage.saveMiniPlayerEnabled(it) }
+        payload.decodeSyncBoolean("seek_bar_segment_markers_enabled")?.let { PlayerSettingsStorage.saveSeekBarSegmentMarkersEnabled(it) }
         payload.decodeSyncBoolean("private_viewing_enabled")?.let { PlayerSettingsStorage.savePrivateViewingEnabled(it) }
         payload.decodeSyncBoolean("use_libass")?.let { PlayerSettingsStorage.saveUseLibass(it) }
         payload.decodeSyncString("libass_render_type")?.let { PlayerSettingsStorage.saveLibassRenderType(it) }

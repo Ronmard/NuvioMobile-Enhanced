@@ -1434,6 +1434,8 @@
     <string name="settings_playback_subtitle_vertical_offset">Vertical Offset</string>
     <string name="settings_playback_skip_intro_outro_recap">Skip Intro</string>
     <string name="settings_playback_skip_intro_outro_recap_description">Use introdb.app to detect intros and recaps.</string>
+    <string name="settings_playback_seek_bar_segment_markers">Show segment markers on seek bar</string>
+    <string name="settings_playback_seek_bar_segment_markers_description">Marks intros, recaps, credits and post-credits scenes on the seek bar, each in its own theme color.</string>
     <string name="settings_playback_skip_backward">Skip Backward</string>
     <string name="settings_playback_skip_forward">Skip Forward</string>
     <string name="settings_playback_skip_seconds_value">%1$d seconds</string>

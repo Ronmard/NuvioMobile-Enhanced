@@ -602,7 +602,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
                 }
             } else null,
             chapters = chapters,
-            segments = skipIntervals,
+            segments = if (playerSettingsUiState.seekBarSegmentMarkersEnabled) skipIntervals else emptyList(),
             onChaptersClick = if (chapters.isNotEmpty()) {
                 {
                     openChaptersPanel()

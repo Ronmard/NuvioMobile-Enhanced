@@ -107,6 +107,7 @@ data class PlayerSettingsUiState(
     val prepareNextEpisodePercent: Float = 70f,
     val prepareNextEpisodeEnabled: Boolean = true,
     val miniPlayerEnabled: Boolean = true,
+    val seekBarSegmentMarkersEnabled: Boolean = true,
     val privateViewingEnabled: Boolean = false,
     val useLibmpvAss: Boolean = false,
     val useLibass: Boolean = true,
@@ -211,6 +212,7 @@ object PlayerSettingsRepository {
     private var prepareNextEpisodePercent = 70f
     private var prepareNextEpisodeEnabled = true
     private var miniPlayerEnabled = true
+    private var seekBarSegmentMarkersEnabled = true
     private var privateViewingEnabled = false
     private var useLibmpvAss = false
     private var useLibass = true
@@ -317,6 +319,7 @@ object PlayerSettingsRepository {
         prepareNextEpisodePercent = 70f
         prepareNextEpisodeEnabled = true
         miniPlayerEnabled = true
+        seekBarSegmentMarkersEnabled = true
         privateViewingEnabled = false
         useLibmpvAss = false
         useLibass = true
@@ -487,6 +490,7 @@ object PlayerSettingsRepository {
         prepareNextEpisodePercent = PlayerSettingsStorage.loadPrepareNextEpisodePercent() ?: 70f
         prepareNextEpisodeEnabled = PlayerSettingsStorage.loadPrepareNextEpisodeEnabled() ?: true
         miniPlayerEnabled = PlayerSettingsStorage.loadMiniPlayerEnabled() ?: true
+        seekBarSegmentMarkersEnabled = PlayerSettingsStorage.loadSeekBarSegmentMarkersEnabled() ?: true
         privateViewingEnabled = PlayerSettingsStorage.loadPrivateViewingEnabled() ?: false
         useLibmpvAss = PlayerSettingsStorage.loadUseLibmpvAss() ?: false
         useLibass = PlayerSettingsStorage.loadUseLibass() ?: true
@@ -1141,6 +1145,14 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveMiniPlayerEnabled(enabled)
     }
 
+    fun setSeekBarSegmentMarkersEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (seekBarSegmentMarkersEnabled == enabled) return
+        seekBarSegmentMarkersEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveSeekBarSegmentMarkersEnabled(enabled)
+    }
+
     fun setPrivateViewingEnabled(enabled: Boolean) {
         ensureLoaded()
         if (privateViewingEnabled == enabled) return
@@ -1428,6 +1440,7 @@ object PlayerSettingsRepository {
             prepareNextEpisodePercent = prepareNextEpisodePercent,
             prepareNextEpisodeEnabled = prepareNextEpisodeEnabled,
             miniPlayerEnabled = miniPlayerEnabled,
+            seekBarSegmentMarkersEnabled = seekBarSegmentMarkersEnabled,
             privateViewingEnabled = privateViewingEnabled,
             useLibass = useLibass,
             libassRenderType = libassRenderType,

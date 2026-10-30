@@ -98,6 +98,7 @@ actual object PlayerSettingsStorage {
     private const val prepareNextEpisodePercentKey = "prepare_next_episode_percent"
     private const val prepareNextEpisodeEnabledKey = "prepare_next_episode_enabled"
     private const val miniPlayerEnabledKey = "mini_player_enabled"
+    private const val seekBarSegmentMarkersEnabledKey = "seek_bar_segment_markers_enabled"
     private const val privateViewingEnabledKey = "private_viewing_enabled"
     private const val useLibassKey = "use_libass"
     private const val libassRenderTypeKey = "libass_render_type"
@@ -182,6 +183,7 @@ actual object PlayerSettingsStorage {
         prepareNextEpisodePercentKey,
         prepareNextEpisodeEnabledKey,
         miniPlayerEnabledKey,
+        seekBarSegmentMarkersEnabledKey,
         useLibassKey,
         libassRenderTypeKey,
         useLibmpvAssKey,
@@ -1079,6 +1081,12 @@ actual object PlayerSettingsStorage {
         saveBoolean(miniPlayerEnabledKey, enabled)
     }
 
+    actual fun loadSeekBarSegmentMarkersEnabled(): Boolean? = loadBoolean(seekBarSegmentMarkersEnabledKey)
+
+    actual fun saveSeekBarSegmentMarkersEnabled(enabled: Boolean) {
+        saveBoolean(seekBarSegmentMarkersEnabledKey, enabled)
+    }
+
     actual fun loadPrivateViewingEnabled(): Boolean? = loadBoolean(privateViewingEnabledKey)
 
     actual fun savePrivateViewingEnabled(enabled: Boolean) {
@@ -1321,6 +1329,7 @@ actual object PlayerSettingsStorage {
         loadPrepareNextEpisodePercent()?.let { put(prepareNextEpisodePercentKey, encodeSyncFloat(it)) }
         loadPrepareNextEpisodeEnabled()?.let { put(prepareNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
         loadMiniPlayerEnabled()?.let { put(miniPlayerEnabledKey, encodeSyncBoolean(it)) }
+        loadSeekBarSegmentMarkersEnabled()?.let { put(seekBarSegmentMarkersEnabledKey, encodeSyncBoolean(it)) }
         loadUseLibass()?.let { put(useLibassKey, encodeSyncBoolean(it)) }
         loadLibassRenderType()?.let { put(libassRenderTypeKey, encodeSyncString(it)) }
         loadUseLibmpvAss()?.let { put(useLibmpvAssKey, encodeSyncBoolean(it)) }
@@ -1414,6 +1423,7 @@ actual object PlayerSettingsStorage {
         payload.decodeSyncFloat(prepareNextEpisodePercentKey)?.let(::savePrepareNextEpisodePercent)
         payload.decodeSyncBoolean(prepareNextEpisodeEnabledKey)?.let(::savePrepareNextEpisodeEnabled)
         payload.decodeSyncBoolean(miniPlayerEnabledKey)?.let(::saveMiniPlayerEnabled)
+        payload.decodeSyncBoolean(seekBarSegmentMarkersEnabledKey)?.let(::saveSeekBarSegmentMarkersEnabled)
         payload.decodeSyncBoolean(useLibassKey)?.let(::saveUseLibass)
         payload.decodeSyncString(libassRenderTypeKey)?.let(::saveLibassRenderType)
         payload.decodeSyncBoolean(useLibmpvAssKey)?.let(::saveUseLibmpvAss)

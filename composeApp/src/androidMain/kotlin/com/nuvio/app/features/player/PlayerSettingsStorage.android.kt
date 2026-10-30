@@ -111,6 +111,7 @@ actual object PlayerSettingsStorage {
     private const val prepareNextEpisodePercentKey = "prepare_next_episode_percent"
     private const val prepareNextEpisodeEnabledKey = "prepare_next_episode_enabled"
     private const val miniPlayerEnabledKey = "mini_player_enabled"
+    private const val seekBarSegmentMarkersEnabledKey = "seek_bar_segment_markers_enabled"
     private const val privateViewingEnabledKey = "private_viewing_enabled"
     private const val useLibassKey = "use_libass"
     private const val libassRenderTypeKey = "libass_render_type"
@@ -196,6 +197,7 @@ actual object PlayerSettingsStorage {
         prepareNextEpisodePercentKey,
         prepareNextEpisodeEnabledKey,
         miniPlayerEnabledKey,
+        seekBarSegmentMarkersEnabledKey,
         useLibassKey,
         libassRenderTypeKey,
         useLibmpvAssKey,
@@ -1562,6 +1564,21 @@ actual object PlayerSettingsStorage {
             ?.apply()
     }
 
+    actual fun loadSeekBarSegmentMarkersEnabled(): Boolean? =
+        preferences?.let { sharedPreferences ->
+            val key = ProfileScopedKey.of(seekBarSegmentMarkersEnabledKey)
+            if (sharedPreferences.contains(key)) {
+                sharedPreferences.getBoolean(key, true)
+            } else null
+        }
+
+    actual fun saveSeekBarSegmentMarkersEnabled(enabled: Boolean) {
+        preferences
+            ?.edit()
+            ?.putBoolean(ProfileScopedKey.of(seekBarSegmentMarkersEnabledKey), enabled)
+            ?.apply()
+    }
+
     actual fun loadPrivateViewingEnabled(): Boolean? =
         preferences?.let { sharedPreferences ->
             val key = ProfileScopedKey.of(privateViewingEnabledKey)
@@ -1828,6 +1845,7 @@ actual object PlayerSettingsStorage {
         loadPrepareNextEpisodePercent()?.let { put(prepareNextEpisodePercentKey, encodeSyncFloat(it)) }
         loadPrepareNextEpisodeEnabled()?.let { put(prepareNextEpisodeEnabledKey, encodeSyncBoolean(it)) }
         loadMiniPlayerEnabled()?.let { put(miniPlayerEnabledKey, encodeSyncBoolean(it)) }
+        loadSeekBarSegmentMarkersEnabled()?.let { put(seekBarSegmentMarkersEnabledKey, encodeSyncBoolean(it)) }
         loadUseLibass()?.let { put(useLibassKey, encodeSyncBoolean(it)) }
         loadLibassRenderType()?.let { put(libassRenderTypeKey, encodeSyncString(it)) }
         loadUseLibmpvAss()?.let { put(useLibmpvAssKey, encodeSyncBoolean(it)) }
@@ -1923,6 +1941,7 @@ actual object PlayerSettingsStorage {
         payload.decodeSyncFloat(prepareNextEpisodePercentKey)?.let(::savePrepareNextEpisodePercent)
         payload.decodeSyncBoolean(prepareNextEpisodeEnabledKey)?.let(::savePrepareNextEpisodeEnabled)
         payload.decodeSyncBoolean(miniPlayerEnabledKey)?.let(::saveMiniPlayerEnabled)
+        payload.decodeSyncBoolean(seekBarSegmentMarkersEnabledKey)?.let(::saveSeekBarSegmentMarkersEnabled)
         payload.decodeSyncBoolean(useLibassKey)?.let(::saveUseLibass)
         payload.decodeSyncString(libassRenderTypeKey)?.let(::saveLibassRenderType)
         payload.decodeSyncBoolean(useLibmpvAssKey)?.let(::saveUseLibmpvAss)

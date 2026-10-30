@@ -1434,6 +1434,15 @@ private fun PlaybackSettingsSection(
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_playback_seek_bar_segment_markers),
+                    description = stringResource(Res.string.settings_playback_seek_bar_segment_markers_description),
+                    checked = autoPlayPlayerSettings.seekBarSegmentMarkersEnabled,
+                    enabled = autoPlayPlayerSettings.skipIntroEnabled && !autoPlayPlayerSettings.externalPlayerEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = PlayerSettingsRepository::setSeekBarSegmentMarkersEnabled,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
                     title = stringResource(Res.string.settings_playback_anime_skip),
                     description = stringResource(Res.string.settings_playback_anime_skip_description),
                     checked = autoPlayPlayerSettings.animeSkipEnabled,
