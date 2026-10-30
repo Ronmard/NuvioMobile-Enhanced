@@ -794,6 +794,7 @@ internal object SettingsConfigTransfer {
         PlayerSettingsStorage.loadIosHardwareDecoderMode()?.let { put("ios_hardware_decoder_mode", encodeSyncString(it)) }
         PlayerSettingsStorage.loadIosAudioOutputMode()?.let { put("ios_audio_output_mode", encodeSyncString(it)) }
         PlayerSettingsStorage.loadIosExtendedDynamicRangeEnabled()?.let { put("ios_extended_dynamic_range_enabled", encodeSyncBoolean(it)) }
+        PlayerSettingsStorage.loadIosLimitSourceRequestsEnabled()?.let { put("ios_limit_source_requests_enabled", encodeSyncBoolean(it)) }
         PlayerSettingsStorage.loadIosTargetColorspaceHintEnabled()?.let { put("ios_target_colorspace_hint_enabled", encodeSyncBoolean(it)) }
         PlayerSettingsStorage.loadIosHdrComputePeakEnabled()?.let { put("ios_hdr_compute_peak_enabled", encodeSyncBoolean(it)) }
         PlayerSettingsStorage.loadIosDebandEnabled()?.let { put("ios_deband_enabled", encodeSyncBoolean(it)) }
@@ -903,6 +904,7 @@ internal object SettingsConfigTransfer {
         payload.decodeSyncString("ios_hardware_decoder_mode")?.let { PlayerSettingsStorage.saveIosHardwareDecoderMode(it) }
         payload.decodeSyncString("ios_audio_output_mode")?.let { PlayerSettingsStorage.saveIosAudioOutputMode(it) }
         payload.decodeSyncBoolean("ios_extended_dynamic_range_enabled")?.let { PlayerSettingsStorage.saveIosExtendedDynamicRangeEnabled(it) }
+        payload.decodeSyncBoolean("ios_limit_source_requests_enabled")?.let { PlayerSettingsStorage.saveIosLimitSourceRequestsEnabled(it) }
         payload.decodeSyncBoolean("ios_target_colorspace_hint_enabled")?.let { PlayerSettingsStorage.saveIosTargetColorspaceHintEnabled(it) }
         payload.decodeSyncBoolean("ios_hdr_compute_peak_enabled")?.let { PlayerSettingsStorage.saveIosHdrComputePeakEnabled(it) }
         payload.decodeSyncBoolean("ios_deband_enabled")?.let { PlayerSettingsStorage.saveIosDebandEnabled(it) }

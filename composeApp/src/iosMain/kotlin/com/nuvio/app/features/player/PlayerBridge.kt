@@ -13,6 +13,11 @@ interface NuvioPlayerBridge {
      * Bridges that are not told stay on mpv.
      */
     fun setPreferredEngine(engine: String)
+    /**
+     * AetherEngine only: one request at a time against remote sources, for the next load
+     * ([PlayerSettingsUiState.iosLimitSourceRequestsEnabled]). mpv ignores it.
+     */
+    fun setLimitSourceRequests(enabled: Boolean)
     fun loadFile(url: String)
     fun loadFileWithAudio(
         videoUrl: String,

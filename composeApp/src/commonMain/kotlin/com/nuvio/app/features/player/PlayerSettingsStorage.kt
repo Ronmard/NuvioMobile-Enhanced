@@ -212,6 +212,8 @@ internal expect object PlayerSettingsStorage {
     fun saveIosPlayerEngine(engine: String)
     fun loadIosExtendedDynamicRangeEnabled(): Boolean?
     fun saveIosExtendedDynamicRangeEnabled(enabled: Boolean)
+    fun loadIosLimitSourceRequestsEnabled(): Boolean?
+    fun saveIosLimitSourceRequestsEnabled(enabled: Boolean)
     fun loadIosTargetColorspaceHintEnabled(): Boolean?
     fun saveIosTargetColorspaceHintEnabled(enabled: Boolean)
     fun loadIosHdrComputePeakEnabled(): Boolean?

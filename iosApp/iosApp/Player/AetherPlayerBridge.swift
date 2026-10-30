@@ -40,6 +40,15 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
     // Engine choice is the router's job; this bridge is always AetherEngine.
     func setPreferredEngine(engine: String) {}
 
+    func setLimitSourceRequests(enabled: Bool) {
+        Self.setLimitsSourceRequests(enabled)
+    }
+
+    /// Process-wide (see `NuvioAetherPlayer.limitsSourceRequests`), so it also covers a prepared next episode.
+    static func setLimitsSourceRequests(_ enabled: Bool) {
+        NuvioAetherPlayer.limitsSourceRequests = enabled
+    }
+
     private func ensurePlayerViewController() -> AetherPlayerViewController {
         if let playerVC { return playerVC }
         let vc = AetherPlayerViewController()

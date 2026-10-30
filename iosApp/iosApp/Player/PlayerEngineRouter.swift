@@ -72,6 +72,10 @@ final class PlayerEngineRouterBridge: NSObject, NuvioPlayerBridge {
         preferredEngine = PlayerEngineChoice(rawValue: engine) ?? .mpv
     }
 
+    func setLimitSourceRequests(enabled: Bool) {
+        AetherPlayerBridgeImpl.setLimitsSourceRequests(enabled)
+    }
+
     func loadFile(url: String) {
         loadFileWithAudio(videoUrl: url, audioUrl: nil, headersJson: nil, subtitlesJson: nil)
     }

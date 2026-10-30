@@ -5,4 +5,6 @@ import ComposeApp
 extension MPVPlayerBridgeImpl {
     // Engine choice is the router's job; this bridge is always mpv.
     func setPreferredEngine(engine: String) {}
+    // AetherEngine's request limit; mpv opens its own connections.
+    func setLimitSourceRequests(enabled: Bool) {}
 }

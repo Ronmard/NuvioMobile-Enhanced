@@ -419,6 +419,7 @@ actual fun PlatformPlayerSurface(
         val preferredEngine = latestPlayerSettings.value.iosPlayerEngine
         InAppLogger.info("Player/iOS", "preferred engine=${preferredEngine.bridgeValue}")
         bridge.setPreferredEngine(preferredEngine.bridgeValue)
+        bridge.setLimitSourceRequests(latestPlayerSettings.value.iosLimitSourceRequestsEnabled)
         bridge.loadFileWithAudio(
             videoUrl = sourceUrl,
             audioUrl = sourceAudioUrl,

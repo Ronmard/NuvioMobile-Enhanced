@@ -30,6 +30,15 @@ public final class NuvioAetherPlayer {
 
     public var preferredAudioLanguages: [String] = []
 
+    /// Caps each remote HTTP(S) source at one request in flight (`maxConcurrentSourceRequests`), which
+    /// also holds the engine's subtitle side reader rather than letting it read the file a second time.
+    /// Debrid CDNs (TorBox) refuse every new request for minutes once a link has been asked too often,
+    /// stalling playback halfway through an episode. Process-wide like the engine's own per-origin
+    /// budget, which keeps a limit once set, so turning this off only reaches origins not yet opened.
+    /// Unisolated so the (nonisolated) bridges can set it; both writes and reads happen on the main
+    /// thread, the write before the load that reads it.
+    nonisolated(unsafe) public static var limitsSourceRequests = true
+
     /// Host diagnostics for transport and background handling (the app's `[NowPlaying]` lines).
     public var onDiagnostic: ((String) -> Void)?
 
@@ -405,12 +414,16 @@ public final class NuvioAetherPlayer {
         // ASS/SSA cues keep their raw events (and tracks their header) for the host's libass renderer;
         // other formats are unaffected.
         options.preserveASSMarkup = true
+        if Self.limitsSourceRequests, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            options.maxConcurrentSourceRequests = 1
+        }
 
         let startPosition = startPositionSeconds ?? pendingSeekSeconds
         pendingSeekSeconds = nil
         isLoadInFlight = true
 
         stallLog("load start=\(startPosition.map { String(format: "%.1f", $0) } ?? "nil") autoplay=\(options.autoplay) "
+            + "maxRequests=\(options.maxConcurrentSourceRequests.map(String.init) ?? "nil") "
             + "host=\(url.host ?? "-") file=\(url.lastPathComponent)")
         let engine = self.engine
         loadTask = Task { @MainActor [weak self] in

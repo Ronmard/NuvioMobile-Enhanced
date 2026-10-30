@@ -1349,6 +1349,15 @@ private fun PlaybackSettingsSection(
                         isTablet = isTablet,
                         onClick = { showIosPlayerEngineDialog = true },
                     )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_ios_limit_source_requests),
+                        description = stringResource(Res.string.settings_playback_ios_limit_source_requests_description),
+                        checked = autoPlayPlayerSettings.iosLimitSourceRequestsEnabled,
+                        enabled = autoPlayPlayerSettings.iosPlayerEngine != IosPlayerEngine.Mpv,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setIosLimitSourceRequestsEnabled,
+                    )
                 }
             }
 

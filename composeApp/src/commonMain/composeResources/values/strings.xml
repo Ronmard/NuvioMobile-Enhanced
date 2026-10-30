@@ -2370,6 +2370,8 @@
     <string name="settings_playback_ios_player_engine_auto_desc">Try AetherEngine first and switch to MPV automatically if it cannot open the stream.</string>
     <string name="settings_playback_ios_player_engine_aether_desc">Always use AetherEngine for system Dolby Vision, HDR and Atmos. Streams it cannot play show an error.</string>
     <string name="settings_playback_ios_player_engine_mpv_desc">Always use MPV, the original player.</string>
+    <string name="settings_playback_ios_limit_source_requests">Limit source requests</string>
+    <string name="settings_playback_ios_limit_source_requests_description">AetherEngine asks a streaming source for one range at a time, so debrid servers do not refuse playback halfway through for too many requests. Turning it off applies after restarting the app.</string>
     <!-- Debrid Result Management section -->
     <string name="settings_debrid_section_result_management">RESULT MANAGEMENT</string>
     <string name="settings_debrid_max_results">Max results</string>

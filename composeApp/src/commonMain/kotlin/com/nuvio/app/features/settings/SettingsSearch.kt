@@ -626,6 +626,11 @@ internal fun settingsSearchEntries(
                 "external-player-app",
                 stringResource(Res.string.settings_playback_external_player_app),
             ) else null,
+            if (isIos) PlaybackSearchRow(
+                "ios-limit-source-requests",
+                stringResource(Res.string.settings_playback_ios_limit_source_requests),
+                stringResource(Res.string.settings_playback_ios_limit_source_requests_description),
+            ) else null,
             PlaybackSearchRow(
                 "hold-to-speed",
                 stringResource(Res.string.settings_playback_hold_to_speed),
