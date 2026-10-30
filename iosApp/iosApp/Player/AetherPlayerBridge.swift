@@ -103,8 +103,10 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
     func startPictureInPicture() {}
     func setVideoZoom(scale: Double) { playerVC?.setVideoZoom(scale) }
     func setExperimentalSinglePrimaryPictureInPictureEnabled(enabled: Bool) {}
-    func updateNowPlayingMetadata(title: String, subtitle: String?, artworkUrl: String?) {}
-    func clearNowPlayingInfo() {}
+    func updateNowPlayingMetadata(title: String, subtitle: String?, artworkUrl: String?) {
+        ensurePlayerViewController().updateNowPlayingMetadata(title: title, subtitle: subtitle, artworkUrl: artworkUrl)
+    }
+    func clearNowPlayingInfo() { playerVC?.clearNowPlayingInfo() }
     func setKeyboardShortcutsEnabled(enabled: Bool) {
         keyboardShortcutsEnabled = enabled
         playerVC?.setKeyboardShortcutsEnabled(enabled)
@@ -499,6 +501,12 @@ final class AetherPlayerViewController: UIViewController {
         onLoadFailed?(message)
     }
 
+    func updateNowPlayingMetadata(title: String, subtitle: String?, artworkUrl: String?) {
+        nowPlaying.updateMetadata(title: title, subtitle: subtitle, artworkUrl: artworkUrl)
+    }
+
+    func clearNowPlayingInfo() { nowPlaying.clearInfo() }
+
     func retryPlayback() {
         if ownsSystemControls { nowPlaying.activate() }
         player?.retry()
@@ -516,7 +524,8 @@ final class AetherPlayerViewController: UIViewController {
         player?.destroy()
         player?.view.removeFromSuperview()
         player = nil
-        nowPlaying.resign(reason: "player destroyed")
+        // Handing off to a prepared next episode keeps the card up until that player publishes.
+        nowPlaying.resign(reason: "player destroyed", keepPublishedInfo: keepAudioSession && ownsSystemControls)
         if keepAudioSession {
             audioSession.releaseWithoutDeactivating()
         } else {

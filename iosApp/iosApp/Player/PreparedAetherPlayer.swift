@@ -120,6 +120,7 @@ final class PreparedAetherPlayer {
             let session = PlayerAudioSessionController()
             session.allowsMultichannelContent = true
             session.deactivate()
+            AetherNowPlayingController.clearIfOrphaned(reason: reason)
         }
     }
 
