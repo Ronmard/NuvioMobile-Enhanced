@@ -33,6 +33,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -45,6 +46,7 @@ import com.nuvio.app.core.ui.themePalette
 import com.nuvio.app.core.ui.nuvioTypeScale
 import com.nuvio.app.features.player.seekpreview.SeekPreviewController
 import com.nuvio.app.features.player.seekpreview.SeekPreviewOverlay
+import com.nuvio.app.features.player.skip.SkipInterval
 import com.nuvio.app.features.streams.StreamBadge
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -128,6 +130,8 @@ internal fun PlayerTimeline(
     onTouchChange: (Boolean) -> Unit = {},
     /** Each chapter after the first gets a mark where it starts. */
     chapters: List<PlayerChapter> = emptyList(),
+    /** Skip segments, marked as colored bands ahead of the playhead. */
+    segments: List<SkipInterval> = emptyList(),
 ) {
     val durationMs = snapshot.durationMs.coerceAtLeast(0L)
     val rangeEnd = durationMs.coerceAtLeast(1L).toFloat()
@@ -135,6 +139,9 @@ internal fun PlayerTimeline(
     val chapterMarks = remember(chapters, durationMs) {
         chapters.chapterMarkFractions(durationMs)
     }
+    val timelineSegments = remember(segments, durationMs) { segments.timelineSegments(durationMs) }
+    val segmentColors = rememberPlayerTimelineSegmentColors()
+    val segmentClip = remember { Path() }
     val accentBrush = MaterialTheme.themePalette.accentBrush()
     val description = stringResource(Res.string.player_seek_position)
     var scrubPosition by remember { mutableStateOf<Long?>(null) }
@@ -188,6 +195,14 @@ internal fun PlayerTimeline(
                                     topLeft = trackOrigin,
                                     size = Size(size.width * bufferedFraction, trackHeight),
                                     cornerRadius = radius,
+                                )
+                                drawTimelineSegments(
+                                    segments = timelineSegments,
+                                    colors = segmentColors,
+                                    positionFraction = state.value / rangeEnd,
+                                    top = trackOrigin.y,
+                                    height = trackHeight,
+                                    clip = segmentClip,
                                 )
                                 drawRoundRect(
                                     brush = accentBrush,

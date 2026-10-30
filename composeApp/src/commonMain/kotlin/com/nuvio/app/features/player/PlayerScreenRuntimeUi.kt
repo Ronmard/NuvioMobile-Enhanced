@@ -602,6 +602,7 @@ private fun PlayerScreenRuntime.RenderPlayerControls(
                 }
             } else null,
             chapters = chapters,
+            segments = skipIntervals,
             onChaptersClick = if (chapters.isNotEmpty()) {
                 {
                     openChaptersPanel()

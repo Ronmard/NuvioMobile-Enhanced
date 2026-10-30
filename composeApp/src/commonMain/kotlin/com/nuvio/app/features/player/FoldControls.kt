@@ -69,6 +69,7 @@ import com.nuvio.app.core.ui.accentBrush
 import com.nuvio.app.core.ui.appIconPainter
 import com.nuvio.app.core.ui.nuvioTypeScale
 import com.nuvio.app.core.ui.themePalette
+import com.nuvio.app.features.player.skip.SkipInterval
 import com.nuvio.app.features.streams.StreamBadge
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -126,6 +127,7 @@ internal fun FoldControls(
     onEpisodesClick: (() -> Unit)?,
     onChaptersClick: (() -> Unit)?,
     chapters: List<PlayerChapter>,
+    segments: List<SkipInterval>,
     onSpeedClick: () -> Unit,
     onResizeModeClick: () -> Unit,
     onVideoSettingsClick: (() -> Unit)?,
@@ -297,6 +299,7 @@ internal fun FoldControls(
                 PlayerChapterTitle(chapters = chapters, positionMs = displayedPositionMs)
                 TimelineRow(
                     chapters = chapters,
+                    segments = segments,
                     playbackSnapshot = playbackSnapshot,
                     displayedPositionMs = displayedPositionMs,
                     showRemainingTime = showRemainingTime,
@@ -467,6 +470,7 @@ internal fun FoldLockedControls(
 @Composable
 private fun TimelineRow(
     chapters: List<PlayerChapter>,
+    segments: List<SkipInterval>,
     playbackSnapshot: PlayerPlaybackSnapshot,
     displayedPositionMs: Long,
     showRemainingTime: Boolean,
@@ -481,6 +485,7 @@ private fun TimelineRow(
         TimeLabel(formatPlaybackTime(displayedPositionMs))
         PlayerTimeline(
             chapters = chapters,
+            segments = segments,
             snapshot = playbackSnapshot,
             displayedPositionMs = displayedPositionMs,
             onScrubChange = onScrubChange,

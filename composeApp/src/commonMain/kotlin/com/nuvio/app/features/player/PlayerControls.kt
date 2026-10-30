@@ -78,6 +78,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.material.icons.automirrored.rounded.Toc
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -101,6 +102,7 @@ import com.nuvio.app.core.ui.gradientMask
 import com.nuvio.app.core.ui.nuvioTypeScale
 import com.nuvio.app.features.player.seekpreview.SeekPreviewController
 import com.nuvio.app.features.player.seekpreview.SeekPreviewOverlay
+import com.nuvio.app.features.player.skip.SkipInterval
 import com.nuvio.app.features.streams.StreamBadge
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -159,6 +161,7 @@ internal fun PlayerControlsShell(
     onSourcesClick: (() -> Unit)? = null,
     onEpisodesClick: (() -> Unit)? = null,
     chapters: List<PlayerChapter> = emptyList(),
+    segments: List<SkipInterval> = emptyList(),
     onChaptersClick: (() -> Unit)? = null,
     onLiveChannelsClick: (() -> Unit)? = null,
     qualityLabel: String? = null,
@@ -209,6 +212,7 @@ internal fun PlayerControlsShell(
             onEpisodesClick = onEpisodesClick,
             onChaptersClick = onChaptersClick,
             chapters = chapters,
+            segments = segments,
             onSpeedClick = onSpeedClick ?: {},
             onResizeModeClick = onResizeModeClick,
             onVideoSettingsClick = onVideoSettingsClick,
@@ -388,6 +392,7 @@ internal fun PlayerControlsShell(
                     onSourcesClick = onSourcesClick,
                     onEpisodesClick = onEpisodesClick,
                     chapters = chapters,
+                    segments = segments,
                     onChaptersClick = onChaptersClick,
                     onLiveChannelsClick = onLiveChannelsClick,
                     qualityLabel = qualityLabel,
@@ -460,6 +465,7 @@ internal fun PlayerControlsShell(
                         seekPreview = seekPreview,
                         onTouchChange = onTimelineTouchChange,
                         chapters = chapters,
+                        segments = segments,
                     )
                     PlayerControlActions(
                         playbackSnapshot = playbackSnapshot,
@@ -921,6 +927,7 @@ private fun ProgressControls(
     onSourcesClick: (() -> Unit)? = null,
     onEpisodesClick: (() -> Unit)? = null,
     chapters: List<PlayerChapter> = emptyList(),
+    segments: List<SkipInterval> = emptyList(),
     onChaptersClick: (() -> Unit)? = null,
     onLiveChannelsClick: (() -> Unit)? = null,
     qualityLabel: String? = null,
@@ -960,6 +967,7 @@ private fun ProgressControls(
             displayedPositionMs = displayedPositionMs,
             bufferedPositionMs = playbackSnapshot.bufferedPositionMs,
             chapters = chapters,
+            segments = segments,
             metrics = metrics,
             onScrubChange = onScrubChange,
             onScrubFinished = onScrubFinished,
@@ -1141,6 +1149,7 @@ internal fun PlayerSeekBar(
     bufferedPositionMs: Long = 0L,
     seekPreview: SeekPreviewController? = null,
     chapters: List<PlayerChapter> = emptyList(),
+    segments: List<SkipInterval> = emptyList(),
     onTouchChange: (Boolean) -> Unit = {},
     /** The legacy layout draws the time pills beside its action pill instead. */
     showTimeRow: Boolean = true,
@@ -1148,6 +1157,7 @@ internal fun PlayerSeekBar(
     val seekDurationMs = durationMs.coerceAtLeast(1L)
     val bufferedFraction = playerBufferedFraction(bufferedPositionMs, durationMs)
     val chapterMarks = remember(chapters, durationMs) { chapters.chapterMarkFractions(durationMs) }
+    val timelineSegments = remember(segments, durationMs) { segments.timelineSegments(durationMs) }
     val seekDescription = stringResource(Res.string.player_seek_position)
     val seekState = remember(seekDurationMs) { SliderState(trackRange = 0f..seekDurationMs.toFloat()) }
     seekState.value = displayedPositionMs.coerceIn(0L, seekDurationMs).toFloat()
@@ -1181,7 +1191,9 @@ internal fun PlayerSeekBar(
                     onValueChangeFinished = { onScrubFinished(displayedPositionMs.coerceIn(0L, seekDurationMs)) },
                     enabled = durationMs > 0L,
                     interactionSource = interactionSource,
-                    track = { sliderState -> PlayerProgressTrack(sliderState, bufferedFraction, chapterMarks) },
+                    track = { sliderState ->
+                        PlayerProgressTrack(sliderState, seekDurationMs.toFloat(), bufferedFraction, chapterMarks, timelineSegments)
+                    },
                 )
             }
             SeekPreviewOverlay(
@@ -1215,6 +1227,9 @@ internal fun playerBufferedFraction(bufferedPositionMs: Long, durationMs: Long):
         0f
     }
 
+/** Half the default thumb's width plus the slider's default gap between thumb and track. */
+private val PlayerSeekBarThumbClearance = 8.dp
+
 internal val PlayerBaseTrackColor = Color.White.copy(alpha = 0.20f)
 
 internal val PlayerBufferedTrackColor = Color.White.copy(alpha = 0.40f)
@@ -1241,8 +1256,10 @@ private fun PlayerBufferedTrack(bufferedFraction: Float, enabled: Boolean = true
 @Composable
 private fun PlayerProgressTrack(
     sliderState: SliderState,
+    trackEnd: Float,
     bufferedFraction: Float,
     chapterMarks: List<Float> = emptyList(),
+    segments: List<PlayerTimelineSegment> = emptyList(),
 ) {
     val palette = MaterialTheme.themePalette
     val inactiveTrackColors = SliderDefaults.colors(
@@ -1264,6 +1281,27 @@ private fun PlayerProgressTrack(
             colors = inactiveTrackColors,
         )
         PlayerBufferedTrack(bufferedFraction = bufferedFraction)
+        if (segments.isNotEmpty()) {
+            val segmentColors = rememberPlayerTimelineSegmentColors()
+            val segmentClip = remember { Path() }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .drawBehind {
+                        val positionFraction = (sliderState.value / trackEnd).coerceIn(0f, 1f)
+                        drawTimelineSegments(
+                            segments = segments,
+                            colors = segmentColors,
+                            positionFraction = positionFraction,
+                            top = 0f,
+                            height = size.height,
+                            clip = segmentClip,
+                            // The thumb and its gap stay clear, as the inactive track leaves them.
+                            fromX = size.width * positionFraction + PlayerSeekBarThumbClearance.toPx(),
+                        )
+                    },
+            )
+        }
         SliderDefaults.Track(
             sliderState = sliderState,
             modifier = Modifier.gradientMask(palette.accentBrush()),
