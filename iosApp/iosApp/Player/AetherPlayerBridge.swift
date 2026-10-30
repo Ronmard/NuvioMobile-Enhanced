@@ -328,7 +328,9 @@ final class AetherPlayerViewController: UIViewController {
     private lazy var nowPlaying = AetherNowPlayingController(owner: self)
     /// Set once this player is the one on screen (an autoplay load or an adopted next episode).
     private var ownsSystemControls = false
-    var systemControlHandler: PlayerSystemControlHandler?
+    var systemControlHandler: PlayerSystemControlHandler? {
+        didSet { nowPlaying.refreshSkipIntervals() }
+    }
     private var initErrorMessage = ""
     private let subtitleOverlay = AetherSubtitleOverlayView()
     private let styledSubtitles = AetherStyledSubtitleView()
@@ -538,6 +540,11 @@ final class AetherPlayerViewController: UIViewController {
     func requestSystemSeekBy(_ offsetMs: Int64) {
         if systemControlHandler?.handleSeekBy(offsetMs: offsetMs) == true { return }
         seekByMs(offsetMs)
+    }
+
+    /// The player's skip setting, or mpv's 10 s before Kotlin has set a handler.
+    func systemSkipStepMs(forward: Bool) -> Int64 {
+        systemControlHandler?.systemSkipStepMs(forward: forward) ?? 10_000
     }
 
     func playPlayback() { player?.play() }

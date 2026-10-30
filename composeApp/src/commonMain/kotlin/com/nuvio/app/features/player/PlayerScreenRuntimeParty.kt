@@ -275,6 +275,9 @@ internal fun PlayerScreenRuntime.BindPartyEffects() {
                 this@BindPartyEffects.seekBy(offsetMs)
                 return true
             }
+
+            override fun systemSkipStepMs(forward: Boolean): Long =
+                skipStepMs(if (forward) PlayerSeekDirection.Forward else PlayerSeekDirection.Backward)
         })
         onDispose { source?.setSystemControlHandler(null) }
     }

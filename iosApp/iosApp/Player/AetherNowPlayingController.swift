@@ -27,7 +27,6 @@ final class AetherNowPlayingController {
         let token: Any
     }
 
-    private static let defaultSkipStepMs: Int64 = 10_000
     private(set) static weak var current: AetherNowPlayingController?
 
     private weak var owner: AetherPlayerViewController?
@@ -77,18 +76,31 @@ final class AetherNowPlayingController {
         center.skipForwardCommand.isEnabled = enabled
         center.skipBackwardCommand.isEnabled = enabled
         center.changePlaybackPositionCommand.isEnabled = enabled
+        // AirPods double / triple press and headset next / previous: skip forward / back.
+        center.nextTrackCommand.isEnabled = enabled
+        center.previousTrackCommand.isEnabled = enabled
+    }
+
+    /// The lock screen's skip buttons show the app's skip steps; refreshed when they may have changed.
+    func refreshSkipIntervals() {
+        guard isCurrent, let owner else { return }
+        let center = MPRemoteCommandCenter.shared()
+        let forward = NSNumber(value: Double(owner.systemSkipStepMs(forward: true)) / 1000.0)
+        let backward = NSNumber(value: Double(owner.systemSkipStepMs(forward: false)) / 1000.0)
+        if center.skipForwardCommand.preferredIntervals != [forward] {
+            center.skipForwardCommand.preferredIntervals = [forward]
+        }
+        if center.skipBackwardCommand.preferredIntervals != [backward] {
+            center.skipBackwardCommand.preferredIntervals = [backward]
+        }
     }
 
     private func configureRemoteCommands() {
-        guard remoteTargets.isEmpty else {
-            setCommandsEnabled(true)
-            return
-        }
+        setCommandsEnabled(true)
+        refreshSkipIntervals()
+        guard remoteTargets.isEmpty else { return }
 
         let center = MPRemoteCommandCenter.shared()
-        setCommandsEnabled(true)
-        center.skipForwardCommand.preferredIntervals = [NSNumber(value: Double(Self.defaultSkipStepMs) / 1000.0)]
-        center.skipBackwardCommand.preferredIntervals = [NSNumber(value: Double(Self.defaultSkipStepMs) / 1000.0)]
 
         addTarget(center.playCommand, name: "play") { owner, _ in
             owner.requestSystemPlaying(true)
@@ -99,12 +111,17 @@ final class AetherNowPlayingController {
         addTarget(center.togglePlayPauseCommand, name: "togglePlayPause") { owner, _ in
             owner.requestSystemPlaying(!owner.isPlayerPlaying)
         }
-        addTarget(center.skipForwardCommand, name: "skipForward") { owner, _ in
-            owner.requestSystemSeekBy(Self.defaultSkipStepMs)
+        // The step is read when the command arrives, so a settings change applies at once.
+        let skipForward: (AetherPlayerViewController, MPRemoteCommandEvent) -> Void = { owner, _ in
+            owner.requestSystemSeekBy(owner.systemSkipStepMs(forward: true))
         }
-        addTarget(center.skipBackwardCommand, name: "skipBackward") { owner, _ in
-            owner.requestSystemSeekBy(-Self.defaultSkipStepMs)
+        let skipBackward: (AetherPlayerViewController, MPRemoteCommandEvent) -> Void = { owner, _ in
+            owner.requestSystemSeekBy(-owner.systemSkipStepMs(forward: false))
         }
+        addTarget(center.skipForwardCommand, name: "skipForward", skipForward)
+        addTarget(center.skipBackwardCommand, name: "skipBackward", skipBackward)
+        addTarget(center.nextTrackCommand, name: "nextTrack", skipForward)
+        addTarget(center.previousTrackCommand, name: "previousTrack", skipBackward)
         addTarget(center.changePlaybackPositionCommand, name: "changePlaybackPosition") { owner, event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return }
             owner.requestSystemSeekTo(Int64(event.positionTime * 1000.0))
