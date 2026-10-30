@@ -30,6 +30,9 @@ public final class NuvioAetherPlayer {
 
     public var preferredAudioLanguages: [String] = []
 
+    /// Host diagnostics for transport and background handling (the app's `[NowPlaying]` lines).
+    public var onDiagnostic: ((String) -> Void)?
+
     public private(set) var audioTracks: [NuvioAetherTrack] = []
     public private(set) var subtitleTracks: [NuvioAetherTrack] = []
     public private(set) var errorMessage = ""
@@ -80,15 +83,34 @@ public final class NuvioAetherPlayer {
     private var requestedSpeed: Float = 1.0
     private var requestedVolume: Float = 1.0
     private var isMuted = false
+    /// The engine released the session while the app sat paused in the background (its grace window
+    /// ran out). It keeps the position and track selection but does not rebuild on its own.
+    private var isSessionTornDown = false
+    private var foregroundObserver: NSObjectProtocol?
 
     public init() throws {
         engine = try AetherEngine()
-        // Nuvio pauses when the app backgrounds (the bridge reports no background playback), as on mpv.
-        engine.backgroundPlaybackEnabled = false
+        // Playback continues with the screen locked or the app in the background (unlike mpv, which
+        // pauses). Paused in the background, the engine releases the session after its grace window;
+        // the next play() rebuilds it (see `rebuildTornDownSession`).
+        engine.backgroundPlaybackEnabled = true
         surface = AetherPlayerView()
         view = surface
         engine.bind(view: surface)
         observeEngine()
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Back on screen paused: bring the picture back rather than waiting for play().
+            Task { @MainActor [weak self] in
+                guard let self, self.isSessionTornDown else { return }
+                self.rebuildTornDownSession(reason: "foreground")
+            }
+        }
+    }
+
+    deinit {
+        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
     }
 
     // MARK: - Observation
@@ -104,6 +126,16 @@ public final class NuvioAetherPlayer {
                 } else {
                     self.failLoad(message)
                 }
+            }
+            .store(in: &cancellables)
+
+        engine.$isSessionReady
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] ready in
+                guard let self, !ready, self.isLoaded, !self.isLoadInFlight,
+                      UIApplication.shared.applicationState == .background else { return }
+                self.isSessionTornDown = true
+                self.onDiagnostic?("engine released the session in the background at \(Int(self.engine.clock.currentTime))s")
             }
             .store(in: &cancellables)
 
@@ -281,6 +313,7 @@ public final class NuvioAetherPlayer {
         let externalSubtitles = declaredExternalSubtitles + addedExternalSubtitles
         externalSubtitleIds = [:]
         errorMessage = ""
+        isSessionTornDown = false
         isLoaded = false
         hasRenderedFirstFrame = false
         hasReportedLoadFailure = false
@@ -340,6 +373,40 @@ public final class NuvioAetherPlayer {
         onLoadFailed?(message)
     }
 
+    /// Reopens a session the engine released in the background, at its position and with its tracks,
+    /// then applies what was asked for meanwhile (play / pause, a seek). Until it is back the player
+    /// reports loading and queues transport like a first load.
+    private func rebuildTornDownSession(reason: String) {
+        guard isSessionTornDown else { return }
+        isSessionTornDown = false
+        isLoaded = false
+        isLoadInFlight = true
+        onDiagnostic?("rebuilding the released session (\(reason)) wantsPlay=\(wantsPlay)")
+        let engine = self.engine
+        loadTask?.cancel()
+        loadTask = Task { @MainActor [weak self] in
+            do {
+                try await engine.reloadAtCurrentPosition()
+                guard let self, !Task.isCancelled else { return }
+                self.isLoadInFlight = false
+                self.isLoaded = true
+                if let target = self.pendingSeekSeconds {
+                    self.pendingSeekSeconds = nil
+                    await engine.seek(to: target)
+                }
+                self.applyPendingSubtitleSelection()
+                self.registerPendingExternalSubtitles()
+                if self.wantsPlay { engine.play() } else { engine.pause() }
+                self.onDiagnostic?("session rebuilt at \(Int(engine.clock.currentTime))s playing=\(self.wantsPlay)")
+            } catch is CancellationError {
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.onDiagnostic?("session rebuild failed: \(error.localizedDescription)")
+                self.failLoad(error.localizedDescription)
+            }
+        }
+    }
+
     public func retry() {
         let position = engine.clock.currentTime
         reload(startPositionSeconds: position > 0 ? position : nil)
@@ -352,6 +419,11 @@ public final class NuvioAetherPlayer {
         loadTask?.cancel()
         loadTask = nil
         cancellables.removeAll()
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+            self.foregroundObserver = nil
+        }
+        isSessionTornDown = false
         engine.stop()
         engine.unbind(view: surface)
     }
@@ -360,6 +432,10 @@ public final class NuvioAetherPlayer {
 
     public func play() {
         wantsPlay = true
+        if isSessionTornDown {
+            rebuildTornDownSession(reason: "play")
+            return
+        }
         guard isLoaded else { return }
         if isEnded {
             // Stays on the last frame, as mpv does with keep-open: a play() after the end (a resumed
@@ -378,6 +454,11 @@ public final class NuvioAetherPlayer {
 
     public func seek(toSeconds target: Double) {
         let target = max(target, 0)
+        if isSessionTornDown {
+            pendingSeekSeconds = target
+            rebuildTornDownSession(reason: "seek")
+            return
+        }
         guard isLoaded else {
             pendingSeekSeconds = target
             return
@@ -520,6 +601,10 @@ public final class NuvioAetherPlayer {
         default: return false
         }
     }
+
+    /// Whether playback was asked for (play() since the last pause()), even while the engine is still
+    /// loading or the system has paused it.
+    public var wantsPlayback: Bool { wantsPlay }
 
     public var isPlaying: Bool {
         if case .playing = engine.state { return true }

@@ -11,6 +11,16 @@ final class PlayerAudioSessionController: NSObject, CXCallObserverDelegate {
     /// multichannel output need. Off by default so the mpv path's session is unchanged; the
     /// AetherEngine path turns it on.
     var allowsMultichannelContent = false
+    /// Keeps playback going under a phone call by mixing with it, as the mpv path does. The AetherEngine
+    /// path turns it off and pauses for the call instead (`onInterruption`).
+    var mixesWithOthersDuringCalls = true
+
+    enum Interruption {
+        case began(wasSuspended: Bool)
+        case ended(shouldResume: Bool)
+    }
+    /// Interruptions (calls, Siri, another app's audio); `.ended` arrives after the session is restored.
+    var onInterruption: ((Interruption) -> Void)?
 
     func activate() {
         if !isActive {
@@ -22,9 +32,21 @@ final class PlayerAudioSessionController: NSObject, CXCallObserverDelegate {
             ) { [weak self] notification in
                 guard let self, self.isActive,
                       let value = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-                      AVAudioSession.InterruptionType(rawValue: value) == .ended else { return }
-                // Restore the session, but leave the player's play/pause decision unchanged.
-                self.configure()
+                      let type = AVAudioSession.InterruptionType(rawValue: value) else { return }
+                switch type {
+                case .began:
+                    let wasSuspended = notification.userInfo?[AVAudioSessionInterruptionWasSuspendedKey] as? Bool ?? false
+                    self.onInterruption?(.began(wasSuspended: wasSuspended))
+                case .ended:
+                    // Restore the session; without an onInterruption handler the player's play/pause
+                    // decision is left unchanged.
+                    self.configure()
+                    let options = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                    let shouldResume = AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume)
+                    self.onInterruption?(.ended(shouldResume: shouldResume))
+                @unknown default:
+                    break
+                }
             }
         }
         configure()
@@ -60,7 +82,7 @@ final class PlayerAudioSessionController: NSObject, CXCallObserverDelegate {
     }
 
     func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
-        guard isActive else { return }
+        guard isActive, mixesWithOthersDuringCalls else { return }
         // Include ringing, outgoing and held calls, and keep mixing until the last call ends.
         // Use the event for this call even if the observer's snapshot hasn't caught up yet.
         let hasCall = !call.hasEnded || callObserver.calls.contains {
@@ -71,7 +93,7 @@ final class PlayerAudioSessionController: NSObject, CXCallObserverDelegate {
 
     private func configure(hasCall: Bool? = nil) {
         let session = AVAudioSession.sharedInstance()
-        let mixing = hasCall ?? callObserver.calls.contains { !$0.hasEnded }
+        let mixing = mixesWithOthersDuringCalls && (hasCall ?? callObserver.calls.contains { !$0.hasEnded })
         let options: AVAudioSession.CategoryOptions = mixing ? [.mixWithOthers] : []
         do {
             if session.category != .playback || session.mode != .moviePlayback || session.categoryOptions != options {

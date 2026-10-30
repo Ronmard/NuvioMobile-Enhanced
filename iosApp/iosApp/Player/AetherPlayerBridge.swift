@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import AVFoundation
 import NuvioAetherKit
 import ComposeApp
 
@@ -97,7 +98,8 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
         systemControlHandler = handler
         playerVC?.systemControlHandler = handler
     }
-    func getKeepsPlaybackInBackground() -> Bool { false }
+    // AetherEngine keeps playing with the screen locked or the app in the background.
+    func getKeepsPlaybackInBackground() -> Bool { true }
     func retry() { playerVC?.retryPlayback() }
     func isPictureInPictureSupported() -> Bool { false }
     func startPictureInPicture() {}
@@ -323,8 +325,13 @@ final class AetherPlayerViewController: UIViewController {
         // Spatial Audio / head tracking and multichannel routes engage for AetherEngine's output.
         let controller = PlayerAudioSessionController()
         controller.allowsMultichannelContent = true
+        // Calls and Siri pause playback and resume it when iOS says to, rather than mixing under them.
+        controller.mixesWithOthersDuringCalls = false
         return controller
     }()
+    /// Set by an interruption that paused playback; cleared when it ends or the user takes over.
+    private var resumesAfterInterruption = false
+    private var systemObservers: [NSObjectProtocol] = []
     private var keyboardShortcutsEnabled = true
     private var keyboardShortcutHandler: ((String) -> Void)?
     private lazy var nowPlaying = AetherNowPlayingController(owner: self)
@@ -364,6 +371,9 @@ final class AetherPlayerViewController: UIViewController {
         super.viewDidLoad()
         subtitleOverlay.style.fontFamily = subtitleFontFamily
         styledSubtitles.defaultFontFamily = subtitleFontFamily
+        audioSession.onInterruption = { [weak self] interruption in
+            self?.handleAudioInterruption(interruption)
+        }
         _ = ensurePlayer()
     }
 
@@ -430,6 +440,7 @@ final class AetherPlayerViewController: UIViewController {
             let player = try NuvioAetherPlayer()
             player.preferredAudioLanguages = preferredAudioLanguages
             player.onLoadFailed = { [weak self] message in self?.handleLoadFailed(message) }
+            player.onDiagnostic = { AetherNowPlayingDebug.log("[engine] \($0)") }
             loadViewIfNeeded()
             player.view.frame = view.bounds
             player.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -481,6 +492,62 @@ final class AetherPlayerViewController: UIViewController {
     func takeSystemControls() {
         ownsSystemControls = true
         nowPlaying.activate()
+        observeSystemEvents()
+    }
+
+    // MARK: - Interruptions, route changes
+
+    private func handleAudioInterruption(_ interruption: PlayerAudioSessionController.Interruption) {
+        switch interruption {
+        case .began(let wasSuspended):
+            // Delivered late to an app that was suspended: there is no live pause to undo.
+            guard !wasSuspended else {
+                AetherNowPlayingDebug.log("interruption began (app was suspended), ignored")
+                return
+            }
+            resumesAfterInterruption = player?.wantsPlayback == true
+            AetherNowPlayingDebug.log("interruption began wasPlaying=\(resumesAfterInterruption) pos=\(positionMs / 1000)s")
+            if resumesAfterInterruption { player?.pause() }
+        case .ended(let shouldResume):
+            let resume = resumesAfterInterruption && shouldResume
+            resumesAfterInterruption = false
+            AetherNowPlayingDebug.log("interruption ended shouldResume=\(shouldResume) resuming=\(resume)")
+            if resume { player?.play() }
+        }
+    }
+
+    private func observeSystemEvents() {
+        guard systemObservers.isEmpty else { return }
+        let center = NotificationCenter.default
+        systemObservers.append(center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(), queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                  let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
+            let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType.rawValue)
+            AetherNowPlayingDebug.log("route change reason=\(raw) outputs=\(outputs) playing=\(self.player?.wantsPlayback == true)")
+            // Headphones or AirPods went away: pause instead of carrying on through the speaker.
+            guard reason == .oldDeviceUnavailable, self.nowPlaying.isCurrent,
+                  self.player?.wantsPlayback == true else { return }
+            self.resumesAfterInterruption = false
+            self.requestSystemPlaying(false)
+        })
+        guard AetherNowPlayingDebug.enabled else { return }
+        for (name, label) in [
+            (UIApplication.didEnterBackgroundNotification, "app entered background"),
+            (UIApplication.didBecomeActiveNotification, "app became active"),
+            (UIApplication.protectedDataWillBecomeUnavailableNotification, "screen locked"),
+        ] {
+            systemObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                guard let self else { return }
+                AetherNowPlayingDebug.log(
+                    "\(label) playing=\(self.isPlayerPlaying) wants=\(self.player?.wantsPlayback == true) " +
+                        "loading=\(self.isPlayerLoading) pos=\(self.positionMs / 1000)s current=\(self.nowPlaying.isCurrent)"
+                )
+            })
+        }
     }
 
     var bufferedSeconds: Double { player?.bufferedSeconds ?? 0 }
@@ -526,6 +593,8 @@ final class AetherPlayerViewController: UIViewController {
         player = nil
         // Handing off to a prepared next episode keeps the card up until that player publishes.
         nowPlaying.resign(reason: "player destroyed", keepPublishedInfo: keepAudioSession && ownsSystemControls)
+        systemObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        systemObservers.removeAll()
         if keepAudioSession {
             audioSession.releaseWithoutDeactivating()
         } else {
@@ -556,8 +625,15 @@ final class AetherPlayerViewController: UIViewController {
         systemControlHandler?.systemSkipStepMs(forward: forward) ?? 10_000
     }
 
-    func playPlayback() { player?.play() }
-    func pausePlayback() { player?.pause() }
+    // A play or pause from the user (or Kotlin) overrides a pending resume after an interruption.
+    func playPlayback() {
+        resumesAfterInterruption = false
+        player?.play()
+    }
+    func pausePlayback() {
+        resumesAfterInterruption = false
+        player?.pause()
+    }
     func seekToMs(_ ms: Int64) { player?.seek(toSeconds: Double(ms) / 1000.0) }
     func seekByMs(_ ms: Int64) { player?.seek(bySeconds: Double(ms) / 1000.0) }
     func setSpeed(_ speed: Float) { player?.setSpeed(speed) }
