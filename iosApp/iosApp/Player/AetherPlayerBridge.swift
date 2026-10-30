@@ -9,15 +9,16 @@ import ComposeApp
 ///
 /// Covers load, transport, position/duration, audio/subtitle track lists and selection,
 /// text subtitles (drawn by `AetherSubtitleOverlayView`), styled ASS (libass) and bitmap subtitles (both
-/// `AetherStyledSubtitleView`), playback state and errors. mpv-specific
-/// calls (video output tuning, raw property reads) and features not wired to AetherEngine yet
-/// (PiP, Now Playing) are safe no-ops.
+/// `AetherStyledSubtitleView`), playback state and errors, and remote commands / Now Playing
+/// (`AetherNowPlayingController`). mpv-specific calls (video output tuning, raw property reads) and
+/// features not wired to AetherEngine yet (PiP) are safe no-ops.
 final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
 
     private var playerVC: AetherPlayerViewController?
     private var keyboardShortcutsEnabled = true
     private var keyboardShortcutHandler: ((String) -> Void)?
     private var preferredAudioLanguages: [String] = []
+    private var systemControlHandler: PlayerSystemControlHandler?
 
     /// Called once when the current load cannot play on AetherEngine (open failure, error before the
     /// first frame, or a source whose audio cannot be delivered). Used by the engine router to fall back.
@@ -45,6 +46,7 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
         vc.setKeyboardShortcutHandler(keyboardShortcutHandler)
         vc.preferredAudioLanguages = preferredAudioLanguages
         vc.onLoadFailed = onLoadFailed
+        vc.systemControlHandler = systemControlHandler
         self.playerVC = vc
         return vc
     }
@@ -91,8 +93,10 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
     func pause() { playerVC?.pausePlayback() }
     func seekTo(positionMs: Int64) { playerVC?.seekToMs(positionMs) }
     func seekBy(offsetMs: Int64) { playerVC?.seekByMs(offsetMs) }
-    // Remote commands / Now Playing are not wired to AetherEngine yet.
-    func setSystemControlHandler(handler: PlayerSystemControlHandler?) {}
+    func setSystemControlHandler(handler: PlayerSystemControlHandler?) {
+        systemControlHandler = handler
+        playerVC?.systemControlHandler = handler
+    }
     func getKeepsPlaybackInBackground() -> Bool { false }
     func retry() { playerVC?.retryPlayback() }
     func isPictureInPictureSupported() -> Bool { false }
@@ -266,7 +270,10 @@ final class AetherPlayerBridgeImpl: NSObject, NuvioPlayerBridge {
     }
 
     /// The prepared player is now the active engine.
-    func didAdopt() { playerVC?.activateAudioSession() }
+    func didAdopt() {
+        playerVC?.activateAudioSession()
+        playerVC?.takeSystemControls()
+    }
 
     var preparedBufferedSeconds: Double { playerVC?.bufferedSeconds ?? 0 }
 
@@ -318,6 +325,10 @@ final class AetherPlayerViewController: UIViewController {
     }()
     private var keyboardShortcutsEnabled = true
     private var keyboardShortcutHandler: ((String) -> Void)?
+    private lazy var nowPlaying = AetherNowPlayingController(owner: self)
+    /// Set once this player is the one on screen (an autoplay load or an adopted next episode).
+    private var ownsSystemControls = false
+    var systemControlHandler: PlayerSystemControlHandler?
     private var initErrorMessage = ""
     private let subtitleOverlay = AetherSubtitleOverlayView()
     private let styledSubtitles = AetherStyledSubtitleView()
@@ -333,9 +344,7 @@ final class AetherPlayerViewController: UIViewController {
     var preferredAudioLanguages: [String] = [] {
         didSet { player?.preferredAudioLanguages = preferredAudioLanguages }
     }
-    var onLoadFailed: ((String) -> Void)? {
-        didSet { player?.onLoadFailed = onLoadFailed }
-    }
+    var onLoadFailed: ((String) -> Void)?
 
     var audioTracks: [TrackInfo] { (player?.audioTracks ?? []).map { Self.trackInfo($0, type: "audio") } }
     var subtitleTracks: [TrackInfo] { (player?.subtitleTracks ?? []).map { Self.trackInfo($0, type: "sub") } }
@@ -416,7 +425,7 @@ final class AetherPlayerViewController: UIViewController {
         do {
             let player = try NuvioAetherPlayer()
             player.preferredAudioLanguages = preferredAudioLanguages
-            player.onLoadFailed = onLoadFailed
+            player.onLoadFailed = { [weak self] message in self?.handleLoadFailed(message) }
             loadViewIfNeeded()
             player.view.frame = view.bounds
             player.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -441,7 +450,10 @@ final class AetherPlayerViewController: UIViewController {
             player.failLoad("Invalid stream URL")
             return
         }
-        if request.autoplay { audioSession.activate() }
+        if request.autoplay {
+            audioSession.activate()
+            takeSystemControls()
+        }
         requestHeaders = request.headers
         // The engine router replays a remembered addon subtitle before the first load, so only a
         // later load (a different stream) invalidates downloads still in flight.
@@ -461,6 +473,12 @@ final class AetherPlayerViewController: UIViewController {
     /// A prepared (paused, preloaded) player becomes the one on screen and takes over the audio session.
     func activateAudioSession() { audioSession.activate() }
 
+    /// Remote commands and Now Playing follow the player on screen.
+    func takeSystemControls() {
+        ownsSystemControls = true
+        nowPlaying.activate()
+    }
+
     var bufferedSeconds: Double { player?.bufferedSeconds ?? 0 }
 
     func failLoad(_ message: String) {
@@ -468,11 +486,21 @@ final class AetherPlayerViewController: UIViewController {
             player.failLoad(message)
         } else {
             initErrorMessage = message
-            onLoadFailed?(message)
+            handleLoadFailed(message)
         }
     }
 
-    func retryPlayback() { player?.retry() }
+    /// Gives up the system controls before the router can hand the load to mpv, whose own Now Playing
+    /// controller then takes the shared centers.
+    private func handleLoadFailed(_ message: String) {
+        nowPlaying.resign(reason: "load failed")
+        onLoadFailed?(message)
+    }
+
+    func retryPlayback() {
+        if ownsSystemControls { nowPlaying.activate() }
+        player?.retry()
+    }
 
     /// [keepAudioSession] leaves the shared session active, for a teardown with another AetherEngine
     /// about to play (the prepared next episode), or for a prepared player that never owned it.
@@ -486,6 +514,7 @@ final class AetherPlayerViewController: UIViewController {
         player?.destroy()
         player?.view.removeFromSuperview()
         player = nil
+        nowPlaying.resign(reason: "player destroyed")
         if keepAudioSession {
             audioSession.releaseWithoutDeactivating()
         } else {
@@ -494,6 +523,22 @@ final class AetherPlayerViewController: UIViewController {
     }
 
     // MARK: - Transport
+
+    // Requests from Now Playing go to the session controller when one handles them.
+    func requestSystemPlaying(_ playing: Bool) {
+        if systemControlHandler?.handleSetPlaying(playing: playing) == true { return }
+        if playing { playPlayback() } else { pausePlayback() }
+    }
+
+    func requestSystemSeekTo(_ positionMs: Int64) {
+        if systemControlHandler?.handleSeekTo(positionMs: positionMs) == true { return }
+        seekToMs(positionMs)
+    }
+
+    func requestSystemSeekBy(_ offsetMs: Int64) {
+        if systemControlHandler?.handleSeekBy(offsetMs: offsetMs) == true { return }
+        seekByMs(offsetMs)
+    }
 
     func playPlayback() { player?.play() }
     func pausePlayback() { player?.pause() }
