@@ -441,6 +441,13 @@ final class PlayerEngineContainerViewController: UIViewController {
         refreshSystemUIForwarding()
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Compose sizes this view, not the engine's. mpv's bounds change keeps its old center, which
+        // autoresizing never corrects, so the picture would stay displaced.
+        engineController?.view.frame = view.bounds
+    }
+
     private func refreshSystemUIForwarding() {
         setNeedsStatusBarAppearanceUpdate()
         setNeedsUpdateOfHomeIndicatorAutoHidden()
