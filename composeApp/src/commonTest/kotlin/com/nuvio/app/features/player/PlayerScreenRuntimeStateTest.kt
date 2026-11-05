@@ -20,6 +20,37 @@ class PlayerScreenRuntimeStateTest {
     }
 
     @Test
+    fun pickedSpeedIsReappliedToEachNewEngineUntilResetToNormal() {
+        val runtime = PlayerScreenRuntime(testPlayerScreenArgs())
+        val untouched = SpeedRecordingController()
+        runtime.applyCarriedPlaybackSpeed(untouched)
+        assertTrue(untouched.speeds.isEmpty())
+
+        runtime.rememberCarriedPlaybackSpeed(1.5f)
+        val nextEpisode = SpeedRecordingController()
+        runtime.applyCarriedPlaybackSpeed(nextEpisode)
+        assertEquals(listOf(1.5f), nextEpisode.speeds)
+        assertEquals(0, nextEpisode.pauses)
+
+        runtime.rememberCarriedPlaybackSpeed(1f)
+        assertNull(runtime.carriedPlaybackSpeed)
+        val afterReset = SpeedRecordingController()
+        runtime.applyCarriedPlaybackSpeed(afterReset)
+        assertTrue(afterReset.speeds.isEmpty())
+    }
+
+    @Test
+    fun carriedSpeedKeepsAPausedPlayerPaused() {
+        val runtime = PlayerScreenRuntime(testPlayerScreenArgs())
+        runtime.rememberCarriedPlaybackSpeed(2f)
+        runtime.shouldPlay = false
+        val controller = SpeedRecordingController()
+        runtime.applyCarriedPlaybackSpeed(controller)
+        assertEquals(listOf(2f), controller.speeds)
+        assertEquals(1, controller.pauses)
+    }
+
+    @Test
     fun endedSnapshotRetainsDurationOnlyForTheSamePlayback() {
         val runtime = PlayerScreenRuntime(testPlayerScreenArgs())
         runtime.updatePlaybackSnapshot(PlayerPlaybackSnapshot(durationMs = 30_000L))
@@ -295,6 +326,30 @@ class PlayerScreenRuntimeStateTest {
                 progressPercent = 100f,
             ),
         )
+    }
+
+    private class SpeedRecordingController : PlayerEngineController {
+        val speeds = mutableListOf<Float>()
+        var pauses = 0
+
+        override fun setPlaybackSpeed(speed: Float) {
+            speeds += speed
+        }
+        override fun pause() {
+            pauses += 1
+        }
+        override fun play() = Unit
+        override fun seekTo(positionMs: Long) = Unit
+        override fun seekBy(offsetMs: Long) = Unit
+        override fun retry() = Unit
+        override fun getAudioTracks(): List<AudioTrack> = emptyList()
+        override fun getSubtitleTracks(): List<SubtitleTrack> = emptyList()
+        override fun applyAudioLanguagePreferences(languages: List<String>) = Unit
+        override fun selectAudioTrack(index: Int) = Unit
+        override fun selectSubtitleTrack(index: Int) = Unit
+        override fun setSubtitleUri(url: String) = Unit
+        override fun clearExternalSubtitle() = Unit
+        override fun clearExternalSubtitleAndSelect(trackIndex: Int) = Unit
     }
 
     private fun testPlayerScreenArgs() = PlayerScreenArgs(
