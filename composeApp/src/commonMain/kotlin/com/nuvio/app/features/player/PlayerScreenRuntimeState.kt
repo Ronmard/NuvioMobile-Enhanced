@@ -172,6 +172,11 @@ internal class PlayerScreenRuntime(
     var accumulatedSeekState by mutableStateOf<PlayerAccumulatedSeekState?>(null)
     var initialLoadCompleted by mutableStateOf(false)
     var isMiniPresentation by mutableStateOf(false)
+    /**
+     * The speed the user picked, reapplied to each new engine while this player stays open. Null at 1x.
+     * Not read from the snapshot, which also reports hold-to-speed and watch party corrections.
+     */
+    var carriedPlaybackSpeed: Float? = null
     var speedBoostRestoreSpeed by mutableStateOf<Float?>(null)
     var isHoldToSpeedGestureActive by mutableStateOf(false)
     var initialSeekApplied by mutableStateOf(

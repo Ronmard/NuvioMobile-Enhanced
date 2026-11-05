@@ -8,6 +8,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import com.nuvio.app.features.party.PartyRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
@@ -330,10 +331,26 @@ internal fun PlayerScreenRuntime.pinchVideoZoom(zoomFactor: Float) {
     )
 }
 
+internal fun PlayerScreenRuntime.rememberCarriedPlaybackSpeed(speed: Float) {
+    // A party's rate belongs to the party.
+    if (PartyRepository.state.value.party != null) return
+    carriedPlaybackSpeed = speed.takeIf { abs(it - 1f) >= 0.01f }
+}
+
+/** Gives a new engine the picked speed. Any party, not just a synced one: the episode key changes mid-transition. */
+internal fun PlayerScreenRuntime.applyCarriedPlaybackSpeed(controller: PlayerEngineController) {
+    val speed = carriedPlaybackSpeed ?: return
+    if (isLiveTvPlayback || PartyRepository.state.value.party != null) return
+    controller.setPlaybackSpeed(speed)
+    // A rate change starts a loaded, paused AetherEngine.
+    if (!shouldPlay) controller.pause()
+}
+
 internal fun PlayerScreenRuntime.setPlaybackSpeedFromPicker(speed: Float) {
     if (partyBlocksControl()) return
     partyRateNudge = null
     playerController?.setPlaybackSpeed(speed)
+    rememberCarriedPlaybackSpeed(speed)
     publishPartyPlayback(rate = speed)
     showGestureMessage(formatPlaybackSpeedLabel(speed))
 }
@@ -345,6 +362,7 @@ internal fun PlayerScreenRuntime.cyclePlaybackSpeed() {
     val next = speeds.firstOrNull { it > current + 0.01f } ?: speeds.first()
     partyRateNudge = null
     playerController?.setPlaybackSpeed(next)
+    rememberCarriedPlaybackSpeed(next)
     publishPartyPlayback(rate = next)
     showGestureMessage(formatPlaybackSpeedLabel(next))
     controlsVisible = true

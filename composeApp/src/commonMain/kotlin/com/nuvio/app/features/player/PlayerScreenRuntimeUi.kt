@@ -147,6 +147,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     val onPinchZoom = rememberUpdatedState<(Float) -> Unit> { factor -> pinchVideoZoom(factor) }
     LaunchedEffect(playerController) {
         if (videoZoom != 1f) playerController?.setVideoZoom(videoZoom)
+        playerController?.let { applyCarriedPlaybackSpeed(it) }
     }
     val isInPip = rememberIsInPictureInPicture()
     val fold = LocalFold.current?.takeIf { !isInPip }
